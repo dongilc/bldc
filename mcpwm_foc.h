@@ -24,6 +24,12 @@
 #include "datatypes.h"
 #include <stdbool.h>
 
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+void mcpwm_foc_set_pos_accum(float pos_accum);
+void mcpwm_foc_print_pos_accum_stored(void);
+#endif
+
 // Functions
 void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuration *conf_m2);
 void mcpwm_foc_deinit(void);

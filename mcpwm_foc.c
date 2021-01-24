@@ -177,6 +177,26 @@ static volatile motor_all_state_t m_motor_2;
 #endif
 static volatile int m_isr_motor = 0;
 
+//for openrobot app 
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO)
+static volatile int m_pos_accum_init_cnt;
+static volatile int m_encoder_mode;
+static volatile float m_pos_s_prev;
+static volatile float m_pos_s_now;
+static volatile float m_pos_ds;
+static volatile float m_pos_accum_now;
+static volatile float m_pos_accum_set;
+static volatile int   m_pos_accum_store_cnt;
+static volatile int m_pos_mode_store[20];
+static volatile float m_pos_accum_store[20];
+
+typedef enum {
+	ENC_NOT_CONFIGURED = 0,
+	DUMMY_FILTERING,
+	ACCUM_POS_READY
+} ACCUMULATED_POS_MODE;
+#endif
+
 // Private functions
 static void do_dc_cal(void);
 void observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
@@ -1034,9 +1054,16 @@ float mcpwm_foc_get_pid_pos_set(void) {
 	return motor_now()->m_pos_pid_set;
 }
 
+//openrobot
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
+float mcpwm_foc_get_pid_pos_now(void) {
+	return m_pos_accum_now;
+}
+#else
 float mcpwm_foc_get_pid_pos_now(void) {
 	return motor_now()->m_pos_pid_now;
 }
+#endif
 
 /**
  * Get the current switching frequency.
@@ -1116,6 +1143,14 @@ mc_state mcpwm_foc_get_state_motor(bool is_second_motor) {
 	return M_MOTOR(is_second_motor)->m_state;
 }
 
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+float mcpwm_foc_get_rpm(void) {
+	//return motor_now()->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
+	//return motor_now()->m_speed_est_fast / ((2.0 * M_PI) / 60.0);
+	return m_pos_ds;
+}
+#else
 /**
  * Calculate the current RPM of the motor. This is a signed value and the sign
  * depends on the direction the motor is rotating in. Note that this value has
@@ -1128,6 +1163,7 @@ float mcpwm_foc_get_rpm(void) {
 	return motor_now()->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
 	//	return motor_now()->m_speed_est_fast / ((2.0 * M_PI) / 60.0);
 }
+#endif
 
 /**
  * Same as above, but uses the fast and noisier estimator.
@@ -2762,9 +2798,62 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		utils_norm_angle((float*)&motor_now->m_pos_pid_now);
 	}
 
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
+	//accumulated angle deg
+	if(encoder_is_configured()==0) m_encoder_mode = ENC_NOT_CONFIGURED;
+	else if(m_pos_accum_init_cnt<=10) {
+		m_encoder_mode = DUMMY_FILTERING;
+	}
+	
+	switch(m_encoder_mode) {
+	case ENC_NOT_CONFIGURED: {
+		m_pos_s_prev = m_pos_s_now = motor_now->m_pos_pid_now;
+		m_pos_ds = 0.;
+	} break;
+
+	case DUMMY_FILTERING: {
+		m_pos_s_prev = m_pos_s_now = m_pos_accum_now = motor_now->m_pos_pid_now;
+		m_pos_ds = 0.;
+		if(m_pos_accum_init_cnt<=10) m_pos_accum_init_cnt++;
+		else m_encoder_mode = ACCUM_POS_READY;
+		if(m_pos_accum_store_cnt<20) {
+			m_pos_mode_store[m_pos_accum_store_cnt] = m_encoder_mode;
+			m_pos_accum_store[m_pos_accum_store_cnt] = m_pos_accum_now;
+			m_pos_accum_store_cnt++;
+		}
+	} break;
+
+	case ACCUM_POS_READY: {
+		m_pos_s_prev = m_pos_s_now;
+		m_pos_s_now = motor_now->m_pos_pid_now;
+		m_pos_ds = m_pos_s_now - m_pos_s_prev;
+		m_pos_accum_now += m_pos_ds;
+
+		// m_pos_accum_now read at 10khz. (TODO) why i set 60. as basis?
+		if(m_pos_ds > 60.) m_pos_accum_now -= 360.;
+		else if(m_pos_ds < -60.) m_pos_accum_now += 360.;
+		if(m_pos_accum_store_cnt<20) {
+			m_pos_mode_store[m_pos_accum_store_cnt] = m_encoder_mode;
+			m_pos_accum_store[m_pos_accum_store_cnt] = m_pos_accum_now;
+			m_pos_accum_store_cnt++;
+		}
+	} break;
+
+	default:
+		break;
+	}
+#endif
+
 	// Run position control
 	if (motor_now->m_state == MC_STATE_RUNNING) {
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+		// The original position control is replaced by multi-turn position control
+		run_pid_control_pos(m_pos_accum_now, m_pos_accum_set, dt, motor_now);	
+#else
 		run_pid_control_pos(motor_now->m_pos_pid_now, motor_now->m_pos_pid_set, dt, motor_now);
+#endif
 	}
 
 #ifdef AD2S1205_SAMPLE_GPIO
@@ -3654,6 +3743,73 @@ static void svm(float alpha, float beta, uint32_t PWMHalfPeriod,
 	*svm_sector = sector;
 }
 
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+static void run_pid_control_pos(float angle_accum_now, float angle_accum_set, float dt, volatile motor_all_state_t *motor) {
+	volatile mc_configuration *conf_now = motor->m_conf;
+	float p_term;
+	float d_term;
+
+	// PID is off. Return.
+	if (motor->m_control_mode != CONTROL_MODE_POS) {
+		motor->m_pos_i_term = 0;
+		motor->m_pos_prev_error = 0;
+		return;
+	}
+
+	// Compute parameters
+	float error = angle_accum_set - angle_accum_now;
+
+	if (encoder_is_configured()) {
+		if (conf_now->foc_encoder_inverted) {
+			error = -error;
+		}
+	}
+
+	p_term = error * conf_now->p_pid_kp;
+	motor->m_pos_i_term += error * (conf_now->p_pid_ki * dt);
+
+	// Average DT for the D term when the error does not change. This likely
+	// happens at low speed when the position resolution is low and several
+	// control iterations run without position updates.
+	// TODO: Are there problems with this approach?
+	motor->m_pos_dt_int += dt;
+	if (error == motor->m_pos_prev_error) {
+		d_term = 0.0;
+	} else {
+		d_term = (error - motor->m_pos_prev_error) * (conf_now->p_pid_kd / motor->m_pos_dt_int);
+		motor->m_pos_dt_int = 0.0;
+	}
+
+	// Filter D
+	UTILS_LP_FAST(motor->m_pos_d_filter, d_term, conf_now->p_pid_kd_filter);
+	d_term = motor->m_pos_d_filter;
+
+
+	// I-term wind-up protection
+	float p_tmp = p_term;
+	utils_truncate_number_abs(&p_tmp, 1.0);
+	utils_truncate_number_abs((float*)&motor->m_pos_i_term, 1.0 - fabsf(p_tmp));
+
+	// Store previous error
+	motor->m_pos_prev_error = error;
+
+	// Calculate output
+	float output = p_term + motor->m_pos_i_term + d_term;
+	utils_truncate_number(&output, -1.0, 1.0);
+
+	if (encoder_is_configured()) {
+		if (encoder_index_found()) {
+			motor->m_iq_set = output * conf_now->lo_current_max;
+		} else {
+			// Rotate the motor with 40 % power until the encoder index is found.
+			motor->m_iq_set = 0.4 * conf_now->lo_current_max;
+		}
+	} else {
+		motor->m_iq_set = output * conf_now->lo_current_max;
+	}
+}
+#else
 static void run_pid_control_pos(float angle_now, float angle_set, float dt, volatile motor_all_state_t *motor) {
 	volatile mc_configuration *conf_now = motor->m_conf;
 	float p_term;
@@ -3718,6 +3874,7 @@ static void run_pid_control_pos(float angle_now, float angle_set, float dt, vola
 		motor->m_iq_set = output * conf_now->lo_current_max;
 	}
 }
+#endif
 
 static void run_pid_control_speed(float dt, volatile motor_all_state_t *motor) {
 	volatile mc_configuration *conf_now = motor->m_conf;
@@ -4045,3 +4202,19 @@ static void terminal_plot_hfi(int argc, const char **argv) {
 		commands_printf("This command requires one argument.\n");
 	}
 }
+
+//for openrobot app
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+void mcpwm_foc_set_pos_accum(float pos_accum) {
+	motor_now()->m_control_mode = CONTROL_MODE_POS;
+	m_pos_accum_set = pos_accum;
+
+	if (motor_now()->m_state != MC_STATE_RUNNING) {
+		motor_now()->m_state = MC_STATE_RUNNING;
+	}
+}
+
+void mcpwm_foc_print_pos_accum_stored(void) {
+	for(int i=0; i<20; i++) commands_printf("%d-mode:%d, %.3f, %.3f", i, m_pos_mode_store[i], (double)m_pos_accum_store[i], (double)motor_now()->m_pos_pid_now);
+}
+#endif
