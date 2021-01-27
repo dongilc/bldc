@@ -60,9 +60,9 @@ static THD_WORKING_AREA(dps_control_thread_wa, 1024);
 void app_openrobot_set_dps(float d, float s, int c_mode);
 void app_openrobot_set_dps_vmax(float Vmax);
 void app_openrobot_set_dps_amax(float Amax);
+void app_openrobot_control_enable(void);
 void app_openrobot_set_goto(float g_t, int c_mode);
 float app_openrobot_goto_controller(void);
-void app_openrobot_control_enable(void);
 
 static void terminal_show_eeprom_conf(int argc, const char **argv);
 static void terminal_show_openrobot_conf(int argc, const char **argv);
@@ -215,23 +215,13 @@ void app_custom_set_eeprom_custom_var3_float(float value) {
 	conf_general_store_eeprom_var_hw(&eeprom_custom_var3, EEPROM_ADDR_CUSTOM_VAR3);
 }
 
-// set can terminal resistor
+// gpio setup CAN terminal resistor
 void app_custom_can_terminal_resistor_set(bool flag) {
 	// can terminal resister setting
 	palSetPadMode(GPIOC, 13, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 	if(flag == true) palSetPad(GPIOC, 13);
 	else 			 palClearPad(GPIOC, 13);
 }
-
-/*
-// CAN Forward Command
-void app_custom_comm_can_set_dps(uint8_t controller_id, float dps) {
-	int32_t send_index = 0;
-	uint8_t buffer[4];
-	buffer_append_int32(buffer, (int32_t)(dps * 1000.0), &send_index);
-	comm_can_transmit_eid(controller_id |
-			((uint32_t)CAN_PACKET_SET_DPS << 8), buffer, send_index);
-}*/
 
 // Called when the custom application is started. Start our
 // threads here and set up callbacks.
