@@ -44,9 +44,10 @@
 #define USE_COMM_SET_DEBUG_PRINT	false
 #define VESC_NUM_MAX				10
 #define SPI_FIXED_DATA_BYTE			255
+#define RAD2DEG						180./M_PI
 #define DPS_DT						0.0001		// 10khz
-#define DPS_Vmax					25000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
-#define DPS_Amax					100000.0	// default:100000.0
+#define DPS_Vmax					4000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
+#define DPS_Amax					4000.0		// default:100000.0
 #define DPS_CONTINUOUS_TIMEOUT		0.5			// dps control disabled when there is no continuous data for 0.5sec
 #define GOTO_KP_DEFAULT				7.0
 
@@ -73,6 +74,7 @@ static void terminal_cmd_custom_dps_control(int argc, const char **argv);
 static void terminal_cmd_custom_goto_control(int argc, const char **argv);
 static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv);
 static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv);
+static void terminal_cmd_custom_find_torque_constant(int argc, const char **argv);
 static void terminal_cmd_custom_motor_release(int argc, const char **argv);
 static void terminal_cmd_custom_set_param(int argc, const char **argv);
 static void terminal_cmd_reboot(int argc, const char **argv);
@@ -80,6 +82,7 @@ static void terminal_cmd_reboot(int argc, const char **argv);
 // Private variables
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
+static volatile bool is_find_kt_running = false;
 static volatile uint8_t app_mode;
 static volatile bool can_term_res;
 static volatile float dt_rt = DPS_DT;
@@ -279,6 +282,11 @@ void app_custom_start(void) {
 			"", terminal_cmd_custom_set_zero_pos_now);
 
 	terminal_register_command_callback(
+			"or_kt",
+			"Find Motor torque constant [Nm/A]",
+			"", terminal_cmd_custom_find_torque_constant);
+
+	terminal_register_command_callback(
 			"or_re",
 			"Release motor position control",
 			"", terminal_cmd_custom_motor_release);
@@ -309,6 +317,7 @@ void app_custom_stop(void) {
 	terminal_unregister_callback(terminal_cmd_custom_goto_control);
 	terminal_unregister_callback(terminal_cmd_custom_goto_zero_pos);
 	terminal_unregister_callback(terminal_cmd_custom_set_zero_pos_now);	
+	terminal_unregister_callback(terminal_cmd_custom_find_torque_constant);		
 	terminal_unregister_callback(terminal_cmd_custom_motor_release);
 	terminal_unregister_callback(terminal_cmd_custom_set_param);
 	terminal_unregister_callback(terminal_cmd_reboot);
@@ -461,6 +470,14 @@ static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv) {
 	// storing current setting to eeprom
 	app_custom_set_eeprom_custom_var3_float(enc_deg_now);
 	commands_printf("Set current Actuator Position %.3f as Zero Position\n", (double)enc_deg_now);
+}
+
+static void terminal_cmd_custom_find_torque_constant(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	// Caution! motor will rotate for 5 sec
+	is_find_kt_running = true;
 }
 
 static void terminal_cmd_custom_motor_release(int argc, const char **argv) {
@@ -628,7 +645,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mcpwm_foc_get_pid_pos_now(), 1e2, &ind); // +4
-	buffer_append_float16(send_buffer, mcpwm_foc_get_rpm(), 1e2, &ind); // +2
+	buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
 
 	// from can_status_msgs
 	for(int i=0; i<can_devs_num; i++)
@@ -677,12 +694,14 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	app_mode = app_custom_get_eeprom_custom_var1_u32(U32_APP_SELECT);
 	can_term_res = app_custom_get_eeprom_custom_var1_u32(U32_CAN_TERMINAL_RESISTOR_MODE_SELECT);
 	if(app_custom_get_eeprom_custom_var1_float()!=0) Vel_maximum = app_custom_get_eeprom_custom_var1_float();
+	else Vel_maximum = DPS_Vmax;
 	if(app_custom_get_eeprom_custom_var2_float()!=0) Acc_maximum = app_custom_get_eeprom_custom_var2_float();
+	else Acc_maximum = DPS_Amax;
 	Zero_Pos = app_custom_get_eeprom_custom_var3_float();
 	
 	//
 	if(app_mode == APP_VESCular) {
-		// Start uart communication: use UART:VESC-Tool, USB:ROS
+		// Start uart communication: recommended usage UART:VESC-Tool, USB:ROS
 		app_uartcomm_start();	
 
 		// set custom app as openrobot app, To set the RX function.
@@ -692,6 +711,18 @@ static THD_FUNCTION(openrobot_thread, arg) {
 					NORMALPRIO, dps_control_thread, NULL);
 	}
 	app_custom_can_terminal_resistor_set((bool)can_term_res);
+
+	int find_step = 0;
+	int polepair_number = 0;
+	float input_duty = 0;
+	float input_volt = 0;
+	float erpm_sum = 0;
+	float erpm_avg = 0;
+	float rps_sum = 0;
+	float rps_avg = 0;
+	float motor_Kv = 0; // rpm/volt
+	float motor_Ke = 0;	// volt/(rad/s)
+	float motor_Kt = 0; // Nm/A. Ke and Kt have the same value when the units are: Ke[volt/rad/s], Kv[Nm/A]
 
 	for(;;) {
 		// Check if it is time to stop.
@@ -703,7 +734,61 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		//timeout_reset(); // Reset timeout if everything is OK.
 
 		// Run your logic here. A lot of functionality is available in mc_interface.h.
+		if (is_find_kt_running)
+		{	
+			find_step++;
+			if(find_step==1) {
+				commands_printf("Finding motor constants");
+				chThdSleepMilliseconds(500);
+				commands_printf("Caution! The motor will start rotating in 5 seconds.");
+				commands_printf("5...");
+				chThdSleepMilliseconds(1000);
+				commands_printf("4...");
+				chThdSleepMilliseconds(1000);
+				commands_printf("3...");
+				chThdSleepMilliseconds(1000);
+				commands_printf("2...");
+				chThdSleepMilliseconds(1000);
+				commands_printf("1...");
+				chThdSleepMilliseconds(1000);
+			}
+			
+			input_duty = find_step*0.2;
+			commands_printf("Input Duty : %.1f", (double)input_duty);
+			mc_interface_set_duty(input_duty);
+
+			for (int i=0; i<40; i++) {
+				timeout_reset();
+				chThdSleepMilliseconds(100);
+				if(i>=20 && i<30) {
+					erpm_sum+=mc_interface_get_rpm();
+					rps_sum+=mcpwm_foc_get_rps();
+				}
+				//commands_printf("motor speed : %.3ferpm, %.3frps", (double)mc_interface_get_rpm(), (double)mcpwm_foc_get_rps());
+			}
+
+			const volatile mc_configuration *conf = mc_interface_get_configuration();
+			polepair_number = conf->foc_encoder_ratio;
+		    erpm_avg = erpm_sum/10.;
+			rps_avg = rps_sum/10.;
+			input_volt = GET_INPUT_VOLTAGE()*input_duty;
+			motor_Kv = erpm_avg/polepair_number/input_volt;
+			motor_Ke = input_volt/rps_avg;
+			motor_Kt = motor_Ke;
 		
+			commands_printf("Motor rotation speed average is %.3f[rad/s](%.3f[rpm]) at %.3f[volt]", (double)rps_avg, (double)(erpm_avg/polepair_number), (double)input_volt); 	
+			commands_printf("Motor Polepair is %d, Kv:%.2f[rpm/volt], Ke:%.4f[volt/rps], Kt:%.4f[Nm/A]", polepair_number, (double)motor_Kv, (double)motor_Ke, (double)motor_Kt);
+			commands_printf("Motor Max. Torque is %.2fNm at %.2fA (Short Period)", (double)(motor_Kt*conf->l_current_max), (double)conf->l_current_max);
+			commands_printf("----------------------------------------------------------");
+
+			mc_interface_set_current(0);
+			erpm_sum = rps_sum = 0;
+			if(find_step>=4) {
+				is_find_kt_running = false;
+				find_step = 0;
+			}
+		}
+
 		chThdSleepMilliseconds(10);
 	}
 }
@@ -872,8 +957,9 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			debug_cnt = 0;
 			if(USE_DPS_DT_PRINT) 	commands_printf("\r\n> dps_control, dt:%d (usec)", duration);
 			if(openrobot_dps_pos_debug_print)	{
-				commands_printf("  id:%d, t:%.2fsec, t_to:%.2fsec, ang now:%.2fdeg, ang target:%.2fdeg", 
-					app_get_configuration()->controller_id, (double)(time_cnt/10000.), (double)(dps_duration_sec - dps_cnt/10000.), (double)mcpwm_foc_get_pid_pos_now(), (double)deg_ref);
+				commands_printf("  id:%d, t:%.2fsec, t_to:%.2fsec, dps_now:%.2f, ang now:%.2fdeg, ang target:%.2fdeg", 
+					app_get_configuration()->controller_id, (double)(time_cnt/10000.), (double)(dps_duration_sec - dps_cnt/10000.), 
+					(double)(mcpwm_foc_get_rps()*RAD2DEG), (double)mcpwm_foc_get_pid_pos_now(), (double)deg_ref);
 			}
 		}
 

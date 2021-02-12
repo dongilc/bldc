@@ -23,4 +23,12 @@
 // Use custom user application
 #define APPCONF_APP_TO_USE				APP_CUSTOM
 
+// overide default parameters in here
+// Position PID parameters
+#define MCCONF_P_PID_KP					0.03	// Proportional gain
+#define MCCONF_P_PID_KI					0.0		// Integral gain
+#define MCCONF_P_PID_KD					0.0004	// Derivative gain
+#define MCCONF_P_PID_KD_FILTER			0.2		// Derivative filter
+#define MCCONF_P_PID_ANG_DIV			1.0		// Divide angle by this value
+
 #endif

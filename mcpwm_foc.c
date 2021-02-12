@@ -1143,14 +1143,6 @@ mc_state mcpwm_foc_get_state_motor(bool is_second_motor) {
 	return M_MOTOR(is_second_motor)->m_state;
 }
 
-//for openrobot app
-#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
-float mcpwm_foc_get_rpm(void) {
-	//return motor_now()->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
-	//return motor_now()->m_speed_est_fast / ((2.0 * M_PI) / 60.0);
-	return m_pos_ds;
-}
-#else
 /**
  * Calculate the current RPM of the motor. This is a signed value and the sign
  * depends on the direction the motor is rotating in. Note that this value has
@@ -1163,7 +1155,6 @@ float mcpwm_foc_get_rpm(void) {
 	return motor_now()->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
 	//	return motor_now()->m_speed_est_fast / ((2.0 * M_PI) / 60.0);
 }
-#endif
 
 /**
  * Same as above, but uses the fast and noisier estimator.
@@ -4216,5 +4207,18 @@ void mcpwm_foc_set_pos_accum(float pos_accum) {
 
 void mcpwm_foc_print_pos_accum_stored(void) {
 	for(int i=0; i<20; i++) commands_printf("%d-mode:%d, %.3f, %.3f", i, m_pos_mode_store[i], (double)m_pos_accum_store[i], (double)motor_now()->m_pos_pid_now);
+}
+
+/**
+ * Get the motor speed based on motor pole settings.
+ *
+ * @return
+ * Speed, in rad/sec
+ */
+float mcpwm_foc_get_rps(void) {
+	const volatile mc_configuration *conf = mc_interface_get_configuration();
+	const float rpm = mc_interface_get_rpm() / conf->foc_encoder_ratio;
+	const float rpm2rps = 2.*M_PI/60.;
+	return (rpm * rpm2rps);
 }
 #endif

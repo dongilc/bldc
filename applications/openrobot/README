@@ -1,0 +1,8 @@
+2021-02-10
+: Finding motor constants (Kt, Ke, Kv) was implimented
+
+2021-02-12
+: TODO-how to find the l_current_max?
+: TODO-reduce vibration when PID position control, what is kd filtering?  
+: TODO-custom eeprom saving fixing
+: TODO-CAN direct control test
