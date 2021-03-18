@@ -42,12 +42,13 @@
 #define USE_DPS_DT_PRINT			false
 #define USE_POSITION_DEBUG_PRINT	true
 #define USE_COMM_SET_DEBUG_PRINT	false
+#define USE_CAN_TERM_RESISTOR_ON 	true
 #define VESC_NUM_MAX				10
 #define SPI_FIXED_DATA_BYTE			255
 #define RAD2DEG						180./M_PI
 #define DPS_DT						0.0001		// 10khz
-#define DPS_Vmax					4000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
-#define DPS_Amax					4000.0		// default:100000.0
+#define DPS_Vmax					25000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
+#define DPS_Amax					100000.0	// default:100000.0
 #define DPS_CONTINUOUS_TIMEOUT		0.5			// dps control disabled when there is no continuous data for 0.5sec
 #define GOTO_KP_DEFAULT				7.0
 
@@ -59,8 +60,8 @@ static THD_WORKING_AREA(dps_control_thread_wa, 1024);
 
 // Private functions
 void app_openrobot_set_dps(float d, float s, int c_mode);
-void app_openrobot_set_dps_vmax(float Vmax);
-void app_openrobot_set_dps_amax(float Amax);
+void app_openrobot_set_dps_vmax(float Vmax, bool flash);
+void app_openrobot_set_dps_amax(float Amax, bool flash);
 void app_openrobot_control_enable(void);
 void app_openrobot_set_goto(float g_t, int c_mode);
 float app_openrobot_goto_controller(void);
@@ -385,7 +386,7 @@ static void terminal_show_position_now(int argc, const char **argv)
 	// print position data
 	commands_printf("Position Data:");
 	commands_printf("  encoder is configured: %d", encoder_is_configured());
-	commands_printf("  accum. deg now: %.2f", (double)mcpwm_foc_get_pid_pos_now());
+	commands_printf("  accum. deg now: %.2f", (double)mcpwm_foc_get_pos_accum());
 	commands_printf("  accum. deg target: %.2f", (double)deg_ref);
 	commands_printf("");
 }
@@ -443,7 +444,7 @@ static void terminal_cmd_custom_goto_control(int argc, const char **argv) {
 		sscanf(argv[1], "%f", &deg);
 
 		if(encoder_is_configured()) {
-			commands_printf("[goto control run] target:%.2fdeg, now:%.2f", (double)deg, (double)mcpwm_foc_get_pid_pos_now());
+			commands_printf("[goto control run] target:%.2fdeg, now:%.2f", (double)deg, (double)mcpwm_foc_get_pos_accum());
 			app_openrobot_set_goto(deg, GOTO_CONTROL);
 		} else commands_printf("Encoder is not configured yet\n");	
 	} else commands_printf("This command requires one argument.\n");
@@ -455,7 +456,7 @@ static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv) {
 
 	float enc_deg_now = app_custom_get_eeprom_custom_var3_float();
 	if(encoder_is_configured()) {
-		commands_printf("[goto zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pid_pos_now());
+		commands_printf("[goto zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pos_accum());
 		goto_target = enc_deg_now;
 		control_mode = GOTO_CONTROL;
 	} else commands_printf("Encoder is not configured yet\n");
@@ -465,8 +466,8 @@ static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
-	// Caution! in openrobot app, we use mcpwm_foc_get_pid_pos_now() instead of mc_interface_get_pid_pos_now() to get encoder position.
-	float enc_deg_now = mcpwm_foc_get_pid_pos_now();
+	// Caution! in openrobot app, we use mcpwm_foc_get_pos_accum() to get encoder position.
+	float enc_deg_now = mcpwm_foc_get_pos_accum();
 	// storing current setting to eeprom
 	app_custom_set_eeprom_custom_var3_float(enc_deg_now);
 	commands_printf("Set current Actuator Position %.3f as Zero Position\n", (double)enc_deg_now);
@@ -496,8 +497,8 @@ static void terminal_cmd_custom_set_param(int argc, const char **argv) {
 		sscanf(argv[1], "%f", &Vmax);
 		sscanf(argv[2], "%f", &Amax);
 
-		app_openrobot_set_dps_vmax(Vmax);
-		app_openrobot_set_dps_amax(Amax);	
+		app_openrobot_set_dps_vmax(Vmax, true);
+		app_openrobot_set_dps_amax(Amax, true);	
 	} else commands_printf("This command requires two argument.\n");
 }
 
@@ -588,11 +589,11 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 						break;
 					case COMM_SET_DPS_VMAX:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0;
-						app_openrobot_set_dps_vmax(value_set[i]);
+						app_openrobot_set_dps_vmax(value_set[i], false);
 						break;
 					case COMM_SET_DPS_AMAX:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0;
-						app_openrobot_set_dps_amax(value_set[i]);
+						app_openrobot_set_dps_amax(value_set[i], false);
 						break;
 					case COMM_SET_GOTO:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0 ;
@@ -644,8 +645,8 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 	buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind); // +2
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
-	buffer_append_float32(send_buffer, mcpwm_foc_get_pid_pos_now(), 1e2, &ind); // +4
-	buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
+	buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4
+	buffer_append_float16(send_buffer, mc_interface_get_rpm(), 1e2, &ind); // +2
 
 	// from can_status_msgs
 	for(int i=0; i<can_devs_num; i++)
@@ -668,7 +669,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 			buffer_append_float16(send_buffer, can_st_msg->duty, 1e3, &ind); // +2
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours, 1e4, &ind); // +4	
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours_charged, 1e4, &ind); // +4	
-			buffer_append_float32(send_buffer, can_st_msg_4->pid_pos_now, 1e2, &ind); // +4
+			buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
 			buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2
 		}
 	}
@@ -693,10 +694,10 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	// set using stored configuration
 	app_mode = app_custom_get_eeprom_custom_var1_u32(U32_APP_SELECT);
 	can_term_res = app_custom_get_eeprom_custom_var1_u32(U32_CAN_TERMINAL_RESISTOR_MODE_SELECT);
-	if(app_custom_get_eeprom_custom_var1_float()!=0) Vel_maximum = app_custom_get_eeprom_custom_var1_float();
-	else Vel_maximum = DPS_Vmax;
-	if(app_custom_get_eeprom_custom_var2_float()!=0) Acc_maximum = app_custom_get_eeprom_custom_var2_float();
-	else Acc_maximum = DPS_Amax;
+	Vel_maximum = app_custom_get_eeprom_custom_var1_float();
+	if(Vel_maximum==0) Vel_maximum = DPS_Vmax;
+	Acc_maximum = app_custom_get_eeprom_custom_var2_float();
+	if(Acc_maximum==0) Acc_maximum = DPS_Amax;
 	Zero_Pos = app_custom_get_eeprom_custom_var3_float();
 	
 	//
@@ -829,21 +830,25 @@ void app_openrobot_set_dps(float d, float s, int c_mode)
 	if(control_mode==DPS_CONTROL_CONTINUOUS) dps_cnt = 0;
 }
 
-void app_openrobot_set_dps_vmax(float Vmax)
+void app_openrobot_set_dps_vmax(float Vmax, bool flash)
 {
 	if(Vmax>0 && Vmax<=DPS_Vmax) {
-		app_custom_set_eeprom_custom_var1_float(Vmax);
+		if(flash) {
+			app_custom_set_eeprom_custom_var1_float(Vmax);
+			commands_printf("Set Vmax: %.2f", (double)Vel_maximum);
+		}
 		Vel_maximum = Vmax;
-		commands_printf("Set Vmax: %.2f", (double)Vel_maximum);
 	} else commands_printf("Invalid Vmax Value (input Vmax from 0 ~ %.1f)\n", (double)DPS_Vmax);
 }
 
-void app_openrobot_set_dps_amax(float Amax)
+void app_openrobot_set_dps_amax(float Amax, bool flash)
 {
 	if(Amax>0 && Amax<=DPS_Amax) {
-		app_custom_set_eeprom_custom_var2_float(Amax);
+		if(flash) {
+			app_custom_set_eeprom_custom_var2_float(Amax);
+			commands_printf("Set Amax: %.2f", (double)Acc_maximum);
+		}
 		Acc_maximum = Amax;
-		commands_printf("Set Amax: %.2f", (double)Acc_maximum);
 	} else commands_printf("Invalid Vmax Value (input Amax from 0 ~ %.1f)\n", (double)DPS_Amax);
 }
 
@@ -857,7 +862,7 @@ void app_openrobot_control_enable(void)
 {
 	// run this every first connection of dps control
 	if(control_set==0) {
-		s_prof = deg_ref = mcpwm_foc_get_pid_pos_now();
+		s_prof = deg_ref = mcpwm_foc_get_pos_accum();
 	}
 	control_set = 1;
 }
@@ -867,7 +872,7 @@ float app_openrobot_goto_controller(void)
 	float dps_goto;
 	float dps_goto_err;
 	
-	dps_goto_err = goto_target - mcpwm_foc_get_pid_pos_now();
+	dps_goto_err = goto_target - mcpwm_foc_get_pos_accum();
 
 	dps_goto = Goto_Kp*dps_goto_err; // 7:optimal, 8:overshoot little, 6.:no overshoot
 	if(fabs(dps_goto) >= (double)Vel_maximum) {
@@ -959,7 +964,7 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			if(openrobot_dps_pos_debug_print)	{
 				commands_printf("  id:%d, t:%.2fsec, t_to:%.2fsec, dps_now:%.2f, ang now:%.2fdeg, ang target:%.2fdeg", 
 					app_get_configuration()->controller_id, (double)(time_cnt/10000.), (double)(dps_duration_sec - dps_cnt/10000.), 
-					(double)(mcpwm_foc_get_rps()*RAD2DEG), (double)mcpwm_foc_get_pid_pos_now(), (double)deg_ref);
+					(double)(mcpwm_foc_get_rps()*RAD2DEG), (double)mcpwm_foc_get_pos_accum(), (double)deg_ref);
 			}
 		}
 

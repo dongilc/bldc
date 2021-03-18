@@ -6,3 +6,18 @@
 : TODO-reduce vibration when PID position control, what is kd filtering?  
 : TODO-custom eeprom saving fixing
 : TODO-CAN direct control test
+
+2021-02-25
+: complete decoding can message
+: TODO - openrobot own made PID control
+: TODO - Position control using Current input on the external Device
+
+
+mcpwm_foc_get_tachometer_value
+mcpwm_foc_get_tachometer_value
+//openrobot
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
+float mcpwm_foc_get_pid_pos_now(void) {
+	return m_pos_accum_now;
+}
+#else

@@ -20,10 +20,17 @@
 #ifndef APPCONF_APPCONF_EXAMPLE_PPM_H_
 #define APPCONF_APPCONF_EXAMPLE_PPM_H_
 
+/* overide default parameters in here */
+
 // Use custom user application
 #define APPCONF_APP_TO_USE				APP_CUSTOM
 
-// overide default parameters in here
+// can
+#define APPCONF_SEND_CAN_STATUS				CAN_STATUS_1_2_3_4_5
+#define APPCONF_CAN_MODE					CAN_MODE_VESC
+#define APPCONF_SEND_CAN_STATUS_RATE_HZ		50
+#define APPCONF_CAN_BAUD_RATE				CAN_BAUD_500K
+
 // Position PID parameters
 #define MCCONF_P_PID_KP					0.03	// Proportional gain
 #define MCCONF_P_PID_KI					0.0		// Integral gain

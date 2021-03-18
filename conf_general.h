@@ -37,9 +37,6 @@
 #include "hw.h"
 #include "openrobot/appconf_openrobot.h"
 #define APP_CUSTOM_TO_USE                   "openrobot/app_openrobot.c"
-#define APPCONF_SEND_CAN_STATUS_RATE_HZ     20
-#define APPCONF_CAN_BAUD_RATE               CAN_BAUD_1M
-#define APPCONF_SEND_CAN_STATUS             CAN_STATUS_1_2_3_4_5
 #elif defined(HW60_IS_VESCUINO)
 #define HW_SOURCE "hw_60_openrobot_vescuino.c"
 #define HW_HEADER "hw_60_openrobot_vescuino.h"

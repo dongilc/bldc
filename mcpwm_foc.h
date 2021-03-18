@@ -26,6 +26,7 @@
 
 //for openrobot app
 #if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+float mcpwm_foc_get_pos_accum(void);
 void mcpwm_foc_set_pos_accum(float pos_accum);
 void mcpwm_foc_print_pos_accum_stored(void);
 float mcpwm_foc_get_rps(void);

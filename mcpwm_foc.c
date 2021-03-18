@@ -1054,16 +1054,9 @@ float mcpwm_foc_get_pid_pos_set(void) {
 	return motor_now()->m_pos_pid_set;
 }
 
-//openrobot
-#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
-float mcpwm_foc_get_pid_pos_now(void) {
-	return m_pos_accum_now;
-}
-#else
 float mcpwm_foc_get_pid_pos_now(void) {
 	return motor_now()->m_pos_pid_now;
 }
-#endif
 
 /**
  * Get the current switching frequency.
@@ -1319,6 +1312,18 @@ int mcpwm_foc_set_tachometer_value(int steps) {
 	return val;
 }
 
+//openrobot
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
+int mcpwm_foc_get_tachometer_value(bool reset) {
+	int val = (int)(m_pos_accum_now*100.0);
+
+	if (reset) {
+		m_pos_accum_now = 0;
+	}
+
+	return val;
+}
+#else
 /**
  * Read the number of steps the motor has rotated. This number is signed and
  * will return a negative number when the motor is rotating backwards.
@@ -1339,6 +1344,7 @@ int mcpwm_foc_get_tachometer_value(bool reset) {
 
 	return val;
 }
+#endif
 
 /**
  * Read the absolute number of steps the motor has rotated.
@@ -4196,6 +4202,11 @@ static void terminal_plot_hfi(int argc, const char **argv) {
 
 //for openrobot app
 #if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+float mcpwm_foc_get_pos_accum(void) {
+	int dir = motor_now()->m_conf->m_invert_direction;
+	return (float)(m_pos_accum_now*dir);
+}
+
 void mcpwm_foc_set_pos_accum(float pos_accum) {
 	motor_now()->m_control_mode = CONTROL_MODE_POS;
 	m_pos_accum_set = pos_accum;
