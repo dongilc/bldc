@@ -12,12 +12,10 @@
 : TODO - openrobot own made PID control
 : TODO - Position control using Current input on the external Device
 
-
-mcpwm_foc_get_tachometer_value
-mcpwm_foc_get_tachometer_value
-//openrobot
-#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
-float mcpwm_foc_get_pid_pos_now(void) {
-	return m_pos_accum_now;
-}
-#else
+2021-04-07
+: complete matching encoder inverted direction with motor out direction. Only when motor inverted dir is false.
+: CAN status msg 
+	1 status msg : pos, vel, motor current
+	pos : encoder absolute position data, 1st 3byte. div 1/10000, +-838.8608rad = +-48087.5618deg = 133.5765rev
+	vel : using mcpwm_foc_get_rpm_fast(), 2nd 3byte. div 1/10000, +-838.8608rps = +-48087.5618dps
+	cur : using mc_interface_get_tot_current_filtered() 3rd 2byte. div 1/100, +-327.68A

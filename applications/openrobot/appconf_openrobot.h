@@ -26,16 +26,16 @@
 #define APPCONF_APP_TO_USE				APP_CUSTOM
 
 // can
-#define APPCONF_SEND_CAN_STATUS				CAN_STATUS_1_2_3_4_5
+#define APPCONF_SEND_CAN_STATUS				CAN_STATUS_1
 #define APPCONF_CAN_MODE					CAN_MODE_VESC
-#define APPCONF_SEND_CAN_STATUS_RATE_HZ		50
-#define APPCONF_CAN_BAUD_RATE				CAN_BAUD_500K
+#define APPCONF_SEND_CAN_STATUS_RATE_HZ		1000
+#define APPCONF_CAN_BAUD_RATE				CAN_BAUD_1M
 
 // Position PID parameters
-#define MCCONF_P_PID_KP					0.03	// Proportional gain
+#define MCCONF_P_PID_KP					0.02	// Proportional gain
 #define MCCONF_P_PID_KI					0.0		// Integral gain
-#define MCCONF_P_PID_KD					0.0004	// Derivative gain
-#define MCCONF_P_PID_KD_FILTER			0.2		// Derivative filter
+#define MCCONF_P_PID_KD					0.0002	// Derivative gain
+#define MCCONF_P_PID_KD_FILTER			0.05	// Derivative filter
 #define MCCONF_P_PID_ANG_DIV			1.0		// Divide angle by this value
 
 #endif
