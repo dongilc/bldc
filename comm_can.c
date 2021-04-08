@@ -38,6 +38,7 @@
 #include "mempools.h"
 #include "shutdown.h"
 #include "bms.h"
+#include "mcpwm_foc.h"	//openrobot
 
 // Settings
 #define RX_FRAMES_SIZE	100
@@ -1614,10 +1615,24 @@ static void send_status1(uint8_t id, bool replace) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 //openrobot
-#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 	
-	buffer_append_int32(buffer, (int32_t)mc_interface_get_rpm(), &send_index);
-	buffer_append_int16(buffer, (int16_t)(mc_interface_get_tot_current_filtered() * 1e1), &send_index);
-	buffer_append_int16(buffer, (int16_t)(mc_interface_get_duty_cycle_now() * 1e3), &send_index);
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
+	int32_t pos_rad = (int32_t)(mcpwm_foc_get_pos_accum()*1000.0);
+	int32_t vel_rps = (int32_t)(mcpwm_foc_get_rpm_fast()*10000.0);
+	int16_t curr_A = (int16_t)(mc_interface_get_tot_current_filtered()*100.0);
+
+	// pos_rad: 1st 3byte. 
+	buffer[send_index++] = pos_rad >> 16;
+	buffer[send_index++] = pos_rad >> 8;
+	buffer[send_index++] = pos_rad;
+
+	// vel_rps: 2nd 3byte. 
+	buffer[send_index++] = vel_rps >> 16;
+	buffer[send_index++] = vel_rps >> 8;
+	buffer[send_index++] = vel_rps;
+
+	// curr_A: 3rd 2byte. 
+	buffer[send_index++] = curr_A >> 8;
+	buffer[send_index++] = curr_A;
 #else
 	buffer_append_int32(buffer, (int32_t)mc_interface_get_rpm(), &send_index);
 	buffer_append_int16(buffer, (int16_t)(mc_interface_get_tot_current_filtered() * 1e1), &send_index);

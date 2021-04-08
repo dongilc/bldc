@@ -49,8 +49,8 @@
 #define RPM2RPS						2.*M_PI/60.
 #define RPM2DPS						6.
 #define DPS_DT						0.0001		// 10khz
-#define DPS_Vmax					10000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
-#define DPS_Amax					100000.0	// default:100000.0
+#define DPS_VMAX_DEFAULT			10000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
+#define DPS_AMAX_DEFAULT			100000.0	// default:100000.0
 #define DPS_CONTINUOUS_TIMEOUT		0.5			// dps control disabled when there is no continuous data for 0.5sec
 #define GOTO_KP_DEFAULT				20.0
 #define GOTO_KI_DEFAULT				0.
@@ -73,6 +73,7 @@ float app_openrobot_goto_controller(void);
 static void terminal_show_eeprom_conf(int argc, const char **argv);
 static void terminal_show_openrobot_conf(int argc, const char **argv);
 static void terminal_show_position_now(int argc, const char **argv);
+static void terminal_show_eeprom_value(int argc, const char **argv);
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv);
 static void terminal_cmd_custom_can_terminal_resistor(int argc, const char **argv);
 static void terminal_cmd_custom_dps_control(int argc, const char **argv);
@@ -96,8 +97,8 @@ static volatile bool is_exp_plot_running = false;
 static volatile uint8_t app_mode;
 static volatile bool can_term_res;
 static volatile float dt_rt = DPS_DT;
-static volatile float Vel_maximum = DPS_Vmax;
-static volatile float Acc_maximum = DPS_Amax;
+static volatile float Vel_maximum = DPS_VMAX_DEFAULT;
+static volatile float Acc_maximum = DPS_AMAX_DEFAULT;
 static volatile float Goto_Kp = GOTO_KP_DEFAULT;
 static volatile float Goto_Ki = GOTO_KI_DEFAULT;
 static volatile float Zero_Pos;
@@ -120,12 +121,6 @@ typedef enum {
 	GOTO_CONTROL,
 	RELEASE
 } CONTROL_MODE;
-
-typedef enum {
-	EEPROM_ADDR_CUSTOM_VAR1 = 0,
-	EEPROM_ADDR_CUSTOM_VAR2,
-	EEPROM_ADDR_CUSTOM_VAR3
-} EEPROM_ADDR_CUSTOM_VAR;
 
 //
 static uint8_t openrobot_host_model = 0;
@@ -154,11 +149,6 @@ typedef enum  {
 } OPENROBOT_HOST_TYPE;
 
 typedef enum  {
-	CAN_MASTER_REPLY_MODE = 80,
-	CAN_STATUS_REPLY_MODE
-} OPENROBOT_CUSTOM_REPLY_MODE;
-
-typedef enum  {
 	COMM_SET_RELEASE = 100,
 	COMM_SET_DPS,
 	COMM_SET_DPS_VMAX,
@@ -166,68 +156,41 @@ typedef enum  {
 	COMM_SET_GOTO
 } COMM_PACKET_ID_OPENROBOT;
 
-// MODE_FLAGs can be specified up to 8(4bit*8=32bit).
+//////////////// EEPROM DATA ////////////////
+// eeprom_var memory index. range:0~63
 typedef enum {
-	U32_APP_SELECT = 0,
-	U32_CAN_TERMINAL_RESISTOR_MODE_SELECT
-} CUSTOM_VAR1_U32;
+	EEP_APP_SELECT = 0,
+	EEP_CAN_TERMINAL_RESISTOR_MODE,
+	EEP_VMAX,
+	EEP_AMAX,
+	EEP_ENC_ZERO_POS
+} EEPROM_VAR_LIST;
 
-// 16(4bit) selection
+// value range : 0~15 (4bit)
 typedef enum {
 	APP_VESCular = 0,
 	APP_VESCuino
 } APP_SELECT;
 
-// 16(4bit) selection
+// value range : 0~15 (4bit)
 typedef enum {
 	CAN_TERMINAL_RESISTOR_OFF = 0,
 	CAN_TERMINAL_RESISTOR_ON
 } CAN_TERMINAL_RESISTOR_MODE;
+//////////////// EEPROM DATA ////////////////
 
-eeprom_var eeprom_custom_var1;
-eeprom_var eeprom_custom_var2;
-eeprom_var eeprom_custom_var3;
+void app_custom_show_eeprom_var(uint8_t var_index)
+{
+	eeprom_var eeprom_custom_var_temp;
 
-// return flag value(4bit) from eeprom_custom_var1.as_u32
-uint8_t app_custom_get_eeprom_custom_var1_u32(uint8_t flag_num) {
-	return (eeprom_custom_var1.as_u32 >> (flag_num*4)) & 0x0000000F;
-}
-// set flag value(4bit) to eeprom_custom_var1.as_u32
-void app_custom_set_eeprom_custom_var1_u32(uint8_t flag_num, uint8_t value) {
-	uint32_t temp;
-	temp = (uint32_t)((value&0x0F) << (flag_num*4));
-	eeprom_custom_var1.as_u32 = eeprom_custom_var1.as_u32 | temp;
-	conf_general_store_eeprom_var_hw(&eeprom_custom_var1, EEPROM_ADDR_CUSTOM_VAR1);
-}
-
-// return float value from eeprom_custom_var1.float
-float app_custom_get_eeprom_custom_var1_float(void) {
-	return eeprom_custom_var1.as_float;
-}
-// set float value to eeprom_custom_var1.float
-void app_custom_set_eeprom_custom_var1_float(float value) {
-	eeprom_custom_var1.as_float = value;
-	conf_general_store_eeprom_var_hw(&eeprom_custom_var1, EEPROM_ADDR_CUSTOM_VAR1);
-}
-
-// return float value from eeprom_custom_var2.float
-float app_custom_get_eeprom_custom_var2_float(void) {
-	return eeprom_custom_var2.as_float;
-}
-// set float value to eeprom_custom_var2.float
-void app_custom_set_eeprom_custom_var2_float(float value) {
-	eeprom_custom_var2.as_float = value;
-	conf_general_store_eeprom_var_hw(&eeprom_custom_var2, EEPROM_ADDR_CUSTOM_VAR2);
-}
-
-// return float value from eeprom_custom_var3.float
-float app_custom_get_eeprom_custom_var3_float(void) {
-	return eeprom_custom_var3.as_float;
-}
-// set float value to eeprom_custom_var3.float
-void app_custom_set_eeprom_custom_var3_float(float value) {
-	eeprom_custom_var3.as_float = value;
-	conf_general_store_eeprom_var_hw(&eeprom_custom_var3, EEPROM_ADDR_CUSTOM_VAR3);
+	// load stored value first	
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, var_index)) {
+		commands_printf("var_index:%d, uint32_value:%x, int32_value:%d, float_value:%f", 
+					var_index, eeprom_custom_var_temp.as_u32, eeprom_custom_var_temp.as_i32, (double)eeprom_custom_var_temp.as_float);	
+	}
+	else {
+		commands_printf("variable index %d is not yet stored on eeprom", var_index);
+	}
 }
 
 // gpio setup CAN terminal resistor
@@ -263,6 +226,11 @@ void app_custom_start(void) {
 			"Show the encoder position value now",
 			"", terminal_show_position_now);
 
+	terminal_register_command_callback(
+			"or_ev",
+			"Show eeprom variable value",
+			"", terminal_show_eeprom_value);
+			
 	terminal_register_command_callback(
 			"or_app",
 			"Print the number d, 0=VESCular, 1=VESCuino",
@@ -338,6 +306,7 @@ void app_custom_stop(void) {
 	terminal_unregister_callback(terminal_show_eeprom_conf);
 	terminal_unregister_callback(terminal_show_openrobot_conf);	
 	terminal_unregister_callback(terminal_show_position_now);	
+	terminal_unregister_callback(terminal_show_eeprom_value);	
 	terminal_unregister_callback(terminal_cmd_custom_app_mode_select);
 	terminal_unregister_callback(terminal_cmd_custom_can_terminal_resistor);
 	terminal_unregister_callback(terminal_cmd_custom_dps_control);
@@ -370,18 +339,41 @@ static void terminal_show_eeprom_conf(int argc, const char **argv)
 	(void)argc;
 	(void)argv;
 
+	eeprom_var eeprom_custom_var_temp;
+
 	// print eeprom stored configuration
 	commands_printf("OpenRobot App, EEPROM Stored Configuration Values:");
-	commands_printf("  openrobot app mode: %d", 
-		app_custom_get_eeprom_custom_var1_u32(U32_APP_SELECT));
-	commands_printf("  can terminal resister on: %d", 
-		app_custom_get_eeprom_custom_var1_u32(U32_CAN_TERMINAL_RESISTOR_MODE_SELECT));
-	commands_printf("  dps control Vmax: %.1f", 
-		(double)app_custom_get_eeprom_custom_var1_float());
-	commands_printf("  dps control Amax: %.1f", 
-		(double)app_custom_get_eeprom_custom_var2_float());	
-	commands_printf("  zero position: %.3fdeg", 
-		(double)app_custom_get_eeprom_custom_var3_float());
+
+	//
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_APP_SELECT)) {
+		commands_printf("  openrobot app mode: %d", (uint32_t)eeprom_custom_var_temp.as_float);
+	}
+	else commands_printf("  openrobot app mode is not yet stored on eeprom");
+
+	//
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_CAN_TERMINAL_RESISTOR_MODE)) {
+		commands_printf("  can terminal resister on: %d", (uint32_t)eeprom_custom_var_temp.as_float);
+	}
+	else commands_printf("  can terminal resister is not yet stored on eeprom");
+
+	//
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_VMAX)) {
+		commands_printf("  dps control Vmax: %.1f", (double)eeprom_custom_var_temp.as_float);
+	}
+	else commands_printf("  dps control Vmax is not yet stored on eeprom");
+	
+	//
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_AMAX)) {
+		commands_printf("  dps control Amax: %.1f", (double)eeprom_custom_var_temp.as_float);
+	}
+	else commands_printf("  dps control Amax is not yet stored on eeprom");
+
+	//
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_ENC_ZERO_POS)) {
+		commands_printf("  zero position: %.3fdeg", (double)eeprom_custom_var_temp.as_float);
+	}
+	else commands_printf("  zero position is not yet stored on eeprom");
+	
 	commands_printf("");
 }
 
@@ -393,7 +385,7 @@ static void terminal_show_openrobot_conf(int argc, const char **argv)
 	// print eeprom stored configuration
 	commands_printf("OpenRobot App, current Configuration Values:");
 	commands_printf("  openrobot app mode: %d", 
-		app_mode);
+		(uint8_t)app_mode);
 	commands_printf("  can terminal resister on: %d", 
 		(uint8_t)can_term_res);
 	commands_printf("  motor control mode: %d (0:NONE, DPS_CONTROL_CONTINUOUS, DPS_CONTROL_DURATION, GOTO_CONTROL, RELEASE), control set: %d", 
@@ -426,17 +418,36 @@ static void terminal_show_position_now(int argc, const char **argv)
 	commands_printf("");
 }
 
+static void terminal_show_eeprom_value(int argc, const char **argv)
+{
+	if (argc == 2) {
+		int d = -1;
+		sscanf(argv[1], "%d", &d);
+
+		app_custom_show_eeprom_var(d);
+	} else commands_printf("This command requires one argument.\n");
+}
+
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv) {
 	if (argc == 2) {
 		int d = -1;
 		sscanf(argv[1], "%d", &d);
 
 		if(d>=0 && d<=15) {
-			if(d==APP_VESCular) commands_printf("APP Mode: VESCular\n");
-			else if(d==APP_VESCuino) commands_printf("APP Mode: VESCuino\n");
+			if(d==APP_VESCular) {
+				commands_printf("APP Mode: VESCular\n");
+				app_mode = d;
+			}
+			else if(d==APP_VESCuino) {
+				commands_printf("APP Mode: VESCuino\n");
+				app_mode = d;
+			}
 			else commands_printf("Select 0 ~ 15 to select App Mode.\n");
+
 			// storing current setting to eeprom
-			app_custom_set_eeprom_custom_var1_u32(U32_APP_SELECT, d);
+			eeprom_var eeprom_custom_var_temp;
+			eeprom_custom_var_temp.as_float = (float)d;
+			conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_APP_SELECT);
 		}
 	} else commands_printf("This command requires one argument.\n");
 }
@@ -448,10 +459,19 @@ static void terminal_cmd_custom_can_terminal_resistor(int argc, const char **arg
 
 		if(d == 0 || d == 1) {
 			app_custom_can_terminal_resistor_set(d);
-			if(d==1) commands_printf("Can Terminal Resistor On\n");
-			else     commands_printf("Can Terminal Resistor Off\n");
+			if(d==1) {
+				commands_printf("Can Terminal Resistor On\n");
+				can_term_res = d;
+			}
+			else {
+				commands_printf("Can Terminal Resistor Off\n");
+				can_term_res = d;
+			}
+
 			// storing current setting to eeprom
-			app_custom_set_eeprom_custom_var1_u32(U32_CAN_TERMINAL_RESISTOR_MODE_SELECT, d);
+			eeprom_var eeprom_custom_var_temp;
+			eeprom_custom_var_temp.as_float = (float)d;
+			conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_CAN_TERMINAL_RESISTOR_MODE);
 		}
 		else commands_printf("Select 0 or 1 to control CAN terminal resistor.\n");	
 	} else commands_printf("This command requires one argument.\n");
@@ -465,7 +485,7 @@ static void terminal_cmd_custom_dps_control(int argc, const char **argv) {
 		sscanf(argv[2], "%f", &sec);
 
 		if(encoder_is_configured()) {
-			if(fabs(dps) <= (double)DPS_Vmax) {
+			if(fabs(dps) <= (double)DPS_VMAX_DEFAULT) {
 				commands_printf("[dps control run] %.2fdps, duration:%.2fsec", (double)dps, (double)sec);
 				app_openrobot_set_dps(dps, sec, DPS_CONTROL_DURATION);
 			} else commands_printf("Invalid DPS value\n");
@@ -489,7 +509,15 @@ static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
-	float enc_deg_now = app_custom_get_eeprom_custom_var3_float();
+	float enc_deg_now = 0.;
+	eeprom_var eeprom_custom_var_temp;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_ENC_ZERO_POS)){
+		enc_deg_now = eeprom_custom_var_temp.as_float;
+	}
+	else {
+		commands_printf("EEPROM Zero position is not yet stored on eeprom, zero position is set at 0\n");
+	}
+
 	if(encoder_is_configured()) {
 		commands_printf("[goto zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pos_accum());
 		goto_target = enc_deg_now;
@@ -501,11 +529,19 @@ static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
-	// Caution! in openrobot app, we use mcpwm_foc_get_pos_accum() to get encoder position.
-	float enc_deg_now = mcpwm_foc_get_pos_accum();
-	// storing current setting to eeprom
-	app_custom_set_eeprom_custom_var3_float(enc_deg_now);
-	commands_printf("Set current Actuator Position %.3f as Zero Position\n", (double)enc_deg_now);
+	if (argc == 1) {
+		// Caution! in openrobot app, we use mcpwm_foc_get_pos_accum() to get encoder position.
+		float enc_deg_now = mcpwm_foc_get_pos_accum();
+		Zero_Pos = enc_deg_now;
+
+		// storing current setting to eeprom
+		eeprom_var eeprom_custom_var_temp;
+		eeprom_custom_var_temp.as_float = enc_deg_now;
+		conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_ENC_ZERO_POS);
+
+		commands_printf("Set current Actuator Position %.3f as Zero Position\n", (double)enc_deg_now);
+	}
+	else commands_printf("This command requires no argument.\n");
 }
 
 static void terminal_cmd_custom_find_torque_constant(int argc, const char **argv) {
@@ -754,20 +790,14 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	is_running = true;
 
 	// when the firmware is flashed, eeprom stored values are initialized as all zero.
-	// VESC-Tool's ConfBackup works only when you use backup data after the firmware is flashed.
-	// read stored setting
-	conf_general_read_eeprom_var_hw(&eeprom_custom_var1, EEPROM_ADDR_CUSTOM_VAR1);
-	conf_general_read_eeprom_var_hw(&eeprom_custom_var2, EEPROM_ADDR_CUSTOM_VAR2);
-	conf_general_read_eeprom_var_hw(&eeprom_custom_var3, EEPROM_ADDR_CUSTOM_VAR3);
-
+	// VESC-Tool's ConfBackup cannot restore eeprom values. You need to make xml file backup.
 	// set using stored configuration
-	app_mode = app_custom_get_eeprom_custom_var1_u32(U32_APP_SELECT);
-	can_term_res = app_custom_get_eeprom_custom_var1_u32(U32_CAN_TERMINAL_RESISTOR_MODE_SELECT);
-	Vel_maximum = app_custom_get_eeprom_custom_var1_float();
-	if(Vel_maximum==0) Vel_maximum = DPS_Vmax;
-	Acc_maximum = app_custom_get_eeprom_custom_var2_float();
-	if(Acc_maximum==0) Acc_maximum = DPS_Amax;
-	Zero_Pos = app_custom_get_eeprom_custom_var3_float();
+	eeprom_var eeprom_custom_var_temp;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_APP_SELECT)) app_mode = (uint32_t)eeprom_custom_var_temp.as_float;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_CAN_TERMINAL_RESISTOR_MODE)) can_term_res = (uint32_t)eeprom_custom_var_temp.as_float;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_VMAX)) Vel_maximum = eeprom_custom_var_temp.as_float;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_AMAX)) Acc_maximum = eeprom_custom_var_temp.as_float;
+	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_ENC_ZERO_POS)) Zero_Pos = eeprom_custom_var_temp.as_float;
 	
 	//
 	if(app_mode == APP_VESCular) {
@@ -804,7 +834,7 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	commands_plot_add_graph("pos accum");
 	float samp = 0.0;
 	const volatile mc_configuration *conf = mc_interface_get_configuration();
-	const volatile float polepair = conf->foc_encoder_ratio;
+	polepair_number = conf->foc_encoder_ratio;
 
 	for(;;) {
 		// Check if it is time to stop.
@@ -849,11 +879,11 @@ static THD_FUNCTION(openrobot_thread, arg) {
 				//commands_printf("motor speed : %.3ferpm, %.3frps", (double)mc_interface_get_rpm(), (double)mcpwm_foc_get_rps());
 
 				commands_plot_set_graph(0);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm()/polepair);
+				commands_send_plot_points(samp, mcpwm_foc_get_rpm()/polepair_number);
 				commands_plot_set_graph(1);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()/polepair);
+				commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()/polepair_number);
 				commands_plot_set_graph(2);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()/polepair);		
+				commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()/polepair_number);		
 				commands_plot_set_graph(3);
 				commands_send_plot_points(samp, mcpwm_foc_get_rps());
 				commands_plot_set_graph(4);
@@ -861,8 +891,6 @@ static THD_FUNCTION(openrobot_thread, arg) {
 				samp++;
 			}
 
-			const volatile mc_configuration *conf = mc_interface_get_configuration();
-			polepair_number = conf->foc_encoder_ratio;
 		    erpm_avg = erpm_sum/100.;
 			rps_avg = rps_sum/100.;
 			input_volt = GET_INPUT_VOLTAGE()*input_duty;
@@ -990,24 +1018,28 @@ void app_openrobot_set_dps(float d, float s, int c_mode)
 
 void app_openrobot_set_dps_vmax(float Vmax, bool flash)
 {
-	if(Vmax>0 && Vmax<=DPS_Vmax) {
+	if(Vmax>0 && Vmax<=DPS_VMAX_DEFAULT) {
 		if(flash) {
-			app_custom_set_eeprom_custom_var1_float(Vmax);
-			commands_printf("Set Vmax: %.2f", (double)Vmax);
+			eeprom_var eeprom_custom_var_temp;
+			eeprom_custom_var_temp.as_float = Vmax;
+			conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_VMAX);
+			commands_printf("Set Vmax: %.2f, eeprom stored", (double)Vmax);
 		}
 		Vel_maximum = Vmax;
-	} else commands_printf("Invalid Vmax Value (input Vmax from 0 ~ %.1f)\n", (double)DPS_Vmax);
+	} else commands_printf("Invalid Vmax Value (input Vmax from 0 ~ %.1f)\n", (double)DPS_VMAX_DEFAULT);
 }
 
 void app_openrobot_set_dps_amax(float Amax, bool flash)
 {
-	if(Amax>0 && Amax<=DPS_Amax) {
+	if(Amax>0 && Amax<=DPS_AMAX_DEFAULT) {
 		if(flash) {
-			app_custom_set_eeprom_custom_var2_float(Amax);
-			commands_printf("Set Amax: %.2f", (double)Amax);
+			eeprom_var eeprom_custom_var_temp;
+			eeprom_custom_var_temp.as_float = Amax;
+			conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_AMAX);
+			commands_printf("Set Amax: %.2f, eeprom stored", (double)Amax);
 		}
 		Acc_maximum = Amax;
-	} else commands_printf("Invalid Vmax Value (input Amax from 0 ~ %.1f)\n", (double)DPS_Amax);
+	} else commands_printf("Invalid Vmax Value (input Amax from 0 ~ %.1f)\n", (double)DPS_AMAX_DEFAULT);
 }
 
 void app_openrobot_set_goto(float g_t, int c_mode)
@@ -1116,7 +1148,7 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			// USE maximum Acceleration value at GOTO_Control, Speed regulated by Vmax at GOTO_Control
 			// The Goto Control Kp. Ki gain is dependent on the Vmax, Amax
 			// For hard servo control, it is good to use Acceleration as Maximum
-			deg_ref = app_openrobot_genProfile(dps_target, (float)DPS_Amax, dt_rt);	
+			deg_ref = app_openrobot_genProfile(dps_target, (float)DPS_AMAX_DEFAULT, dt_rt);	
 		} break;
 
 		default:

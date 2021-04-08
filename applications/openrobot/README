@@ -13,9 +13,10 @@
 : TODO - Position control using Current input on the external Device
 
 2021-04-07
-: complete matching encoder inverted direction with motor out direction. Only when motor inverted dir is false.
-: CAN status msg 
+: completed enc_deg_now matching encoder inverted direction with motor out direction. Only when motor inverted dir is false.
+: CAN status msg completed
 	1 status msg : pos, vel, motor current
 	pos : encoder absolute position data, 1st 3byte. div 1/10000, +-838.8608rad = +-48087.5618deg = 133.5765rev
 	vel : using mcpwm_foc_get_rpm_fast(), 2nd 3byte. div 1/10000, +-838.8608rps = +-48087.5618dps
 	cur : using mc_interface_get_tot_current_filtered() 3rd 2byte. div 1/100, +-327.68A
+: debugging eeprom custom variable storing completed

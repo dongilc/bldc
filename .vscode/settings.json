@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "comm_can.h": "c",
-        "datatypes.h": "c"
+        "datatypes.h": "c",
+        "chrono": "c"
     }
 }
