@@ -21,5 +21,6 @@
 	cur : using mc_interface_get_tot_current_filtered()    3rd 2byte. div 1/100, +-327.68A
 : debugging eeprom custom variable storing completed
 
-2021-04-09
-: TODO - set can_res_term status On at the usb connected device or lowest id number device.
+2021-04-11
+: completed - set can_res_term status On at the usb connected device.
+: completed - build with mc_conf file using pre-setted header file. located at conf_general.h

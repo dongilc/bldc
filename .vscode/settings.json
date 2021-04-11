@@ -2,6 +2,7 @@
     "files.associations": {
         "comm_can.h": "c",
         "datatypes.h": "c",
-        "chrono": "c"
+        "chrono": "c",
+        "kitech_motor_ifdef_210411.h": "c"
     }
 }

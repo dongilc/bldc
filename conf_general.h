@@ -32,11 +32,18 @@
 #define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
 
 #ifdef HW60_IS_VESCULAR
+/////////////////////////// HW60_IS_VESCULAR /////////////////////////////////
 #define HW_SOURCE "hw_60_openrobot_vescular.c"
 #define HW_HEADER "hw_60_openrobot_vescular.h"
 #include "hw.h"
+
+// app setting custom precompilation
 #include "openrobot/appconf_openrobot.h"
-#define APP_CUSTOM_TO_USE                   "openrobot/app_openrobot.c"
+#define APP_CUSTOM_TO_USE            "openrobot/app_openrobot.c"
+
+// motor setting custom precompilation
+#include "openrobot/mc_header_custom/kitech_motor_ifdef_id_14.h"
+////////////////////////////////////////////////////////////////////////////////
 #elif defined(HW60_IS_VESCUINO)
 #define HW_SOURCE "hw_60_openrobot_vescuino.c"
 #define HW_HEADER "hw_60_openrobot_vescuino.h"

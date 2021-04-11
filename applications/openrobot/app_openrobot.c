@@ -34,6 +34,7 @@
 #include "timer.h"
 #include "buffer.h"
 #include "comm_can.h"
+#include "comm_usb_serial.h"
 
 #include <math.h>
 #include <string.h>
@@ -47,6 +48,7 @@
 #define VESC_NUM_MAX				10
 #define SPI_FIXED_DATA_BYTE			255
 #define RAD2DEG						180./M_PI
+#define DEG2RAD						M_PI/180.
 #define RPM2RPS						2.*M_PI/60.
 #define RPM2DPS						6.
 #define DPS_DT						0.0001		// 10khz
@@ -113,7 +115,8 @@ static volatile float dps_duration_sec;
 static volatile float dps_error_int = 0.;
 static volatile float goto_target;
 static volatile int control_mode = 0;
-static volatile int control_set = 0;	
+static volatile int control_set = 0;
+static uint8_t controller_id = 0;	
 static int polepair_number = 0;
 static volatile uint32_t dps_cnt = 0;
 
@@ -202,6 +205,8 @@ void app_custom_can_terminal_resistor_set(bool flag) {
 	palSetPadMode(GPIOC, 13, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 	if(flag == true) palSetPad(GPIOC, 13);
 	else 			 palClearPad(GPIOC, 13);
+
+	can_term_res = flag;
 }
 
 // Called when the custom application is started. Start our
@@ -492,11 +497,9 @@ static void terminal_cmd_custom_can_terminal_resistor(int argc, const char **arg
 			app_custom_can_terminal_resistor_set(d);
 			if(d==1) {
 				commands_printf("Can Terminal Resistor On\n");
-				can_term_res = d;
 			}
 			else {
 				commands_printf("Can Terminal Resistor Off\n");
-				can_term_res = d;
 			}
 
 			// storing current setting to eeprom
@@ -860,12 +863,13 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	commands_plot_add_graph("rps [get_rpm]");
 	commands_plot_add_graph("rps [get_rpm_fast]");
 	commands_plot_add_graph("rps [get_rpm_faster]");
-	commands_plot_add_graph("rps");
-	commands_plot_add_graph("pos accum");
+	commands_plot_add_graph("rps [get_rps]");
+	commands_plot_add_graph("rad [pos accum]");
 	float samp = 0.0;
-	polepair_number = mcpwm_foc_get_polepair();
 
-	const volatile mc_configuration *conf = mc_interface_get_configuration();
+	// get motor setting and app setting handler
+	const volatile mc_configuration *mc_conf = mc_interface_get_configuration();
+	const volatile app_configuration *app_conf = app_get_configuration();
 
 	for(;;) {
 		// Check if it is time to stop.
@@ -879,64 +883,72 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		// Run your logic here. A lot of functionality is available in mc_interface.h.
 		if (is_find_kt_running)
 		{	
-			find_step++;
-			if(find_step==1) {
-				commands_printf("Finding motor constants");
-				chThdSleepMilliseconds(500);
-				commands_printf("Caution! The motor will start rotating in 5 seconds.");
-				commands_printf("5...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("4...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("3...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("2...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("1...");
-				chThdSleepMilliseconds(1000);
-			}
-			
-			input_duty = find_step*0.2;
-			commands_printf("Input Duty : %.1f", (double)input_duty);
-			mc_interface_set_duty(input_duty);
-
-			for (int i=0; i<400; i++) {
-				timeout_reset();
-				chThdSleepMilliseconds(10);
-				if(i>=200 && i<300) {
-					erpm_sum+=mc_interface_get_rpm();
-					rps_sum+=mcpwm_foc_get_rps();
+			if(encoder_is_configured()) {
+				find_step++;
+				if(find_step==1) {
+						commands_printf("Finding motor constants, Controller Id:%d", controller_id);
+						chThdSleepMilliseconds(500);
+						commands_printf("Caution! The motor will start rotating in 5 seconds.");
+						commands_printf("5...");
+						chThdSleepMilliseconds(1000);
+						commands_printf("4...");
+						chThdSleepMilliseconds(1000);
+						commands_printf("3...");
+						chThdSleepMilliseconds(1000);
+						commands_printf("2...");
+						chThdSleepMilliseconds(1000);
+						commands_printf("1...");
+						chThdSleepMilliseconds(1000);
 				}
-				//commands_printf("motor speed : %.3ferpm, %.3frps", (double)mc_interface_get_rpm(), (double)mcpwm_foc_get_rps());
+				
+				input_duty = find_step*0.2;
+				commands_printf("Input Duty : %.1f", (double)input_duty);
+				mc_interface_set_duty(input_duty);
 
-				commands_plot_set_graph(0);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm()/polepair_number);
-				commands_plot_set_graph(1);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()/polepair_number);
-				commands_plot_set_graph(2);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()/polepair_number);		
-				commands_plot_set_graph(3);
-				commands_send_plot_points(samp, mcpwm_foc_get_rps());
-				commands_plot_set_graph(4);
-				commands_send_plot_points(samp, mcpwm_foc_get_pos_accum());
-				samp++;
+				for (int i=0; i<400; i++) {
+					timeout_reset();
+					chThdSleepMilliseconds(10);
+					if(i>=200 && i<300) {
+						erpm_sum+=mc_interface_get_rpm();
+						rps_sum+=mcpwm_foc_get_rps();
+					}
+					//commands_printf("motor speed : %.3ferpm, %.3frps", (double)mc_interface_get_rpm(), (double)mcpwm_foc_get_rps());
+
+					commands_plot_set_graph(0);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
+					commands_plot_set_graph(1);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS/polepair_number);
+					commands_plot_set_graph(2);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS/polepair_number);		
+					commands_plot_set_graph(3);
+					commands_send_plot_points(samp, mcpwm_foc_get_rps());
+					commands_plot_set_graph(4);
+					commands_send_plot_points(samp, mcpwm_foc_get_pos_accum()*DEG2RAD);
+					samp++;
+				}
+
+				erpm_avg = erpm_sum/100.;
+				rps_avg = rps_sum/100.;
+				input_volt = GET_INPUT_VOLTAGE()*input_duty;
+				motor_Kv = erpm_avg/polepair_number/input_volt;
+				motor_Ke = input_volt/rps_avg;
+				motor_Kt = motor_Ke;
+			
+				commands_printf("Motor rotation speed average is %.3f[rad/s](%.3f[rpm]) at %.3f[volt]", (double)rps_avg, (double)(erpm_avg/polepair_number), (double)input_volt); 	
+				commands_printf("Motor Polepair is %d, Kv:%.2f[rpm/volt], Ke:%.4f[volt/rps], Kt:%.4f[Nm/A]", polepair_number, (double)motor_Kv, (double)motor_Ke, (double)motor_Kt);
+				commands_printf("Motor Max. Torque is %.2fNm at %.2fA (Short Period)", (double)(motor_Kt*mc_conf->l_current_max), (double)mc_conf->l_current_max);
+				commands_printf("----------------------------------------------------------");
+
+				mc_interface_set_current(0);
+				erpm_sum = rps_sum = 0;
+				if(find_step>=4) {
+					is_find_kt_running = false;
+					find_step = 0;
+					samp = 0.;
+				}
 			}
-
-		    erpm_avg = erpm_sum/100.;
-			rps_avg = rps_sum/100.;
-			input_volt = GET_INPUT_VOLTAGE()*input_duty;
-			motor_Kv = erpm_avg/polepair_number/input_volt;
-			motor_Ke = input_volt/rps_avg;
-			motor_Kt = motor_Ke;
-		
-			commands_printf("Motor rotation speed average is %.3f[rad/s](%.3f[rpm]) at %.3f[volt]", (double)rps_avg, (double)(erpm_avg/polepair_number), (double)input_volt); 	
-			commands_printf("Motor Polepair is %d, Kv:%.2f[rpm/volt], Ke:%.4f[volt/rps], Kt:%.4f[Nm/A]", polepair_number, (double)motor_Kv, (double)motor_Ke, (double)motor_Kt);
-			commands_printf("Motor Max. Torque is %.2fNm at %.2fA (Short Period)", (double)(motor_Kt*conf->l_current_max), (double)conf->l_current_max);
-			commands_printf("----------------------------------------------------------");
-
-			mc_interface_set_current(0);
-			erpm_sum = rps_sum = 0;
-			if(find_step>=4) {
+			else {
+				commands_printf("Encoder is not configured yet, Abort process");
 				is_find_kt_running = false;
 				find_step = 0;
 				samp = 0.;
@@ -946,46 +958,54 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		// Run your logic here. A lot of functionality is available in mc_interface.h.
 		if (is_goto_exam_running)
 		{	
-			find_step++;
-			if(find_step==1) {
-				commands_printf("Goto Control Example");
-				chThdSleepMilliseconds(500);
-				commands_printf("Caution! The motor will start rotating in 5 seconds.");
-				commands_printf("5...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("4...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("3...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("2...");
-				chThdSleepMilliseconds(1000);
-				commands_printf("1...");
-				chThdSleepMilliseconds(1000);
+			if(encoder_is_configured()) {
+				find_step++;
+				if(find_step==1) {
+					commands_printf("Goto Control Example");
+					chThdSleepMilliseconds(500);
+					commands_printf("Caution! The motor will start rotating in 5 seconds.");
+					commands_printf("5...");
+					chThdSleepMilliseconds(1000);
+					commands_printf("4...");
+					chThdSleepMilliseconds(1000);
+					commands_printf("3...");
+					chThdSleepMilliseconds(1000);
+					commands_printf("2...");
+					chThdSleepMilliseconds(1000);
+					commands_printf("1...");
+					chThdSleepMilliseconds(1000);
+				}
+
+				for (int i=0; i<500; i++) {	
+					if(find_step==1) app_openrobot_set_goto(100, GOTO_CONTROL);
+					if(find_step==2) app_openrobot_set_goto(2160, GOTO_CONTROL);
+					if(find_step==3) app_openrobot_set_goto(-10000, GOTO_CONTROL);
+					if(find_step==4) app_openrobot_set_dps(4000, 0, DPS_CONTROL_CONTINUOUS);
+					if(find_step==5) app_openrobot_set_goto(0, GOTO_CONTROL);
+
+					commands_plot_set_graph(0);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
+					commands_plot_set_graph(1);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS/polepair_number);
+					commands_plot_set_graph(2);
+					commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS/polepair_number);		
+					commands_plot_set_graph(3);
+					commands_send_plot_points(samp, mcpwm_foc_get_rps());
+					commands_plot_set_graph(4);
+					commands_send_plot_points(samp, mcpwm_foc_get_pos_accum()*DEG2RAD);
+					samp++;
+					chThdSleepMilliseconds(10);
+				}
+
+				mc_interface_set_current(0);
+				if(find_step>=6) {
+					is_goto_exam_running = false;
+					find_step = 0;
+					samp = 0.;
+				}
 			}
-
-			for (int i=0; i<500; i++) {	
-				if(find_step==1) app_openrobot_set_goto(100, GOTO_CONTROL);
-				if(find_step==2) app_openrobot_set_goto(2160, GOTO_CONTROL);
-				if(find_step==3) app_openrobot_set_goto(-10000, GOTO_CONTROL);
-				if(find_step==4) app_openrobot_set_dps(4000, 0, DPS_CONTROL_CONTINUOUS);
-				if(find_step==5) app_openrobot_set_goto(0, GOTO_CONTROL);
-
-				commands_plot_set_graph(0);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS);
-				commands_plot_set_graph(1);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS);
-				commands_plot_set_graph(2);
-				commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS);		
-				commands_plot_set_graph(3);
-				commands_send_plot_points(samp, mcpwm_foc_get_rps());
-				commands_plot_set_graph(4);
-				commands_send_plot_points(samp, mcpwm_foc_get_pos_accum());
-				samp++;
-				chThdSleepMilliseconds(10);
-			}
-
-			mc_interface_set_current(0);
-			if(find_step>=6) {
+			else {
+				commands_printf("Encoder is not configured yet, Abort process");
 				is_goto_exam_running = false;
 				find_step = 0;
 				samp = 0.;
@@ -995,19 +1015,41 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		if (is_exp_plot_running)
 		{	
 			commands_plot_set_graph(0);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS);
+			commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
 			commands_plot_set_graph(1);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS);
+			commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS/polepair_number);
 			commands_plot_set_graph(2);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS);		
+			commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS/polepair_number);		
 			commands_plot_set_graph(3);
 			commands_send_plot_points(samp, mcpwm_foc_get_rps());
 			commands_plot_set_graph(4);
-			commands_send_plot_points(samp, mcpwm_foc_get_pos_accum());
+			commands_send_plot_points(samp, mcpwm_foc_get_pos_accum()*DEG2RAD);
 			samp++;
 		}
 
-		chThdSleepMilliseconds(10);
+		////////////////////////////////////////////////////////////////////////////
+		// openrobot thread loop task
+		// 1. update get can_id
+		controller_id = app_conf->controller_id;
+
+		// 2. update polepair_number
+		polepair_number = mc_conf->foc_encoder_ratio;
+
+		// 3. if can_terminal_resistor is not set on eeprom and usb connection is used, then set can_term_resistor on.
+		if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_CAN_TERMINAL_RESISTOR_MODE)==0) {
+			if(comm_usb_serial_configured_cnt()>=1 && can_term_res==0)	{
+				// CAN Terminal Resistor EEPROM based On
+				//const char *argv[6] = {"or_can", "1"};
+				//terminal_cmd_custom_can_terminal_resistor(2, argv);
+
+				// CAN Terminal Resistor Temporally On
+				app_custom_can_terminal_resistor_set(1);
+				commands_printf("Can Terminal Resistor Temporally On, At the USB connected VESC.\n");
+			}
+		}
+
+		chThdSleepMilliseconds(10);	// 100Hz
+		////////////////////////////////////////////////////////////////////////////
 	}
 }
 
