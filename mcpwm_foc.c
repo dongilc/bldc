@@ -4209,6 +4209,7 @@ static void terminal_plot_hfi(int argc, const char **argv) {
 //for openrobot app
 #if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
 float mcpwm_foc_get_pos_accum(void) {
+	// accumulated degree
 	return (float)(m_pos_accum_now);
 }
 
@@ -4226,6 +4227,15 @@ void mcpwm_foc_print_pos_accum_stored(void) {
 	for(int i=0; i<20; i++) commands_printf("%d-mode:%d, %.3f, %.3f", i, m_pos_mode_store[i], (double)m_pos_accum_store[i], (double)m_pos_encoder);
 }
 
+/*
+* Get polepair number
+*/
+uint16_t mcpwm_foc_get_polepair(void) {
+	const volatile mc_configuration *conf = mc_interface_get_configuration();
+	const volatile uint16_t polepair = conf->foc_encoder_ratio;
+	return polepair;
+}
+
 /**
  * Get the motor speed based on motor pole settings.
  *
@@ -4233,8 +4243,7 @@ void mcpwm_foc_print_pos_accum_stored(void) {
  * Speed, in rad/sec
  */
 float mcpwm_foc_get_rps(void) {
-	const volatile mc_configuration *conf = mc_interface_get_configuration();
-	const volatile float rpm2rps = 2.*M_PI/60./conf->foc_encoder_ratio;
-	return (float)(mcpwm_foc_get_rpm_fast()*rpm2rps);
+	const volatile float erpm2rps = 2.*M_PI/60./mcpwm_foc_get_polepair();
+	return (float)(mcpwm_foc_get_rpm_fast()*erpm2rps);
 }
 #endif

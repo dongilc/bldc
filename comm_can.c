@@ -1483,9 +1483,43 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				ind = 0;
 				stat_tmp->id = id;
 				stat_tmp->rx_time = chVTGetSystemTime();
+//openrobot
+#if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO)
+				int32_t res_temp = 0;
+				int8_t sign = 0;
+
+				//pos - rad
+				if((data8[ind] >> 7)) sign = 0xFF;	// if msb is high, it is minus value
+				else 				  sign = 0x00;	// if msb is low, it is plus value
+				res_temp = ((uint32_t) sign) << 24 |
+					       ((uint32_t) data8[ind]) << 16 |
+						   ((uint32_t) data8[ind + 1]) << 8 |
+						   ((uint32_t) data8[ind + 2]);
+				float pos = (float)(res_temp/1000.);
+				ind += 3;
+
+				//vel - rad/sec
+				if((data8[ind] >> 7)) sign = 0xFF;	// if msb is high, it is minus value
+				else 				  sign = 0x00;	// if msb is low, it is plus value
+				res_temp = ((uint32_t) sign) << 24 |
+					       ((uint32_t) data8[ind]) << 16 |
+						   ((uint32_t) data8[ind + 1]) << 8 |
+						   ((uint32_t) data8[ind + 2]);
+				float vel = (float)(res_temp/10000.);
+				ind += 3;
+
+				//curr - A
+				res_temp = buffer_get_int16(data8, &ind);
+				float curr = (float)(res_temp/100.);
+
+				stat_tmp->rpm = vel;		// rad/sec
+				stat_tmp->current = curr;	// A
+				stat_tmp->duty = pos;		// use stat_tmp->duty as pos [rad]
+#else
 				stat_tmp->rpm = (float)buffer_get_int32(data8, &ind);
 				stat_tmp->current = (float)buffer_get_int16(data8, &ind) / 10.0;
 				stat_tmp->duty = (float)buffer_get_int16(data8, &ind) / 1000.0;
+#endif
 				break;
 			}
 		}
@@ -1614,11 +1648,12 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 static void send_status1(uint8_t id, bool replace) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
+	
 //openrobot
 #if defined(HW60_IS_VESCULAR) || defined(HW60_IS_VESCUINO) 
-	int32_t pos_rad = (int32_t)(mcpwm_foc_get_pos_accum()*1000.0);
-	int32_t vel_rps = (int32_t)(mcpwm_foc_get_rpm_fast()*10000.0);
-	int16_t curr_A = (int16_t)(mc_interface_get_tot_current_filtered()*100.0);
+	int32_t pos_rad = (int32_t)(mcpwm_foc_get_pos_accum()*M_PI/180.*1000.0);
+	int32_t vel_rps = (int32_t)(mcpwm_foc_get_rps()*10000.0);
+	int16_t curr = (int16_t)(mc_interface_get_tot_current_filtered()*100.0);
 
 	// pos_rad: 1st 3byte. 
 	buffer[send_index++] = pos_rad >> 16;
@@ -1631,8 +1666,8 @@ static void send_status1(uint8_t id, bool replace) {
 	buffer[send_index++] = vel_rps;
 
 	// curr_A: 3rd 2byte. 
-	buffer[send_index++] = curr_A >> 8;
-	buffer[send_index++] = curr_A;
+	buffer[send_index++] = curr >> 8;
+	buffer[send_index++] = curr;
 #else
 	buffer_append_int32(buffer, (int32_t)mc_interface_get_rpm(), &send_index);
 	buffer_append_int16(buffer, (int16_t)(mc_interface_get_tot_current_filtered() * 1e1), &send_index);
@@ -1645,6 +1680,7 @@ static void send_status1(uint8_t id, bool replace) {
 static void send_status2(uint8_t id, bool replace) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
+
 	buffer_append_int32(buffer, (int32_t)(mc_interface_get_amp_hours(false) * 1e4), &send_index);
 	buffer_append_int32(buffer, (int32_t)(mc_interface_get_amp_hours_charged(false) * 1e4), &send_index);
 	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_2 << 8),

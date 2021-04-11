@@ -33,6 +33,7 @@
 #include "timeout.h"
 #include "timer.h"
 #include "buffer.h"
+#include "comm_can.h"
 
 #include <math.h>
 #include <string.h>
@@ -74,6 +75,7 @@ static void terminal_show_eeprom_conf(int argc, const char **argv);
 static void terminal_show_openrobot_conf(int argc, const char **argv);
 static void terminal_show_position_now(int argc, const char **argv);
 static void terminal_show_eeprom_value(int argc, const char **argv);
+static void terminal_cmd_custom_show_can_status_msg(int argc, const char **argv);
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv);
 static void terminal_cmd_custom_can_terminal_resistor(int argc, const char **argv);
 static void terminal_cmd_custom_dps_control(int argc, const char **argv);
@@ -111,7 +113,8 @@ static volatile float dps_duration_sec;
 static volatile float dps_error_int = 0.;
 static volatile float goto_target;
 static volatile int control_mode = 0;
-static volatile int control_set = 0;
+static volatile int control_set = 0;	
+static int polepair_number = 0;
 static volatile uint32_t dps_cnt = 0;
 
 typedef enum {
@@ -227,10 +230,15 @@ void app_custom_start(void) {
 			"", terminal_show_position_now);
 
 	terminal_register_command_callback(
-			"or_ev",
+			"or_sev",
 			"Show eeprom variable value",
 			"", terminal_show_eeprom_value);
-			
+
+	terminal_register_command_callback(
+			"or_scs",
+			"Show can status messages",
+			"[id] [msg_type]", terminal_cmd_custom_show_can_status_msg);
+
 	terminal_register_command_callback(
 			"or_app",
 			"Print the number d, 0=VESCular, 1=VESCuino",
@@ -307,6 +315,7 @@ void app_custom_stop(void) {
 	terminal_unregister_callback(terminal_show_openrobot_conf);	
 	terminal_unregister_callback(terminal_show_position_now);	
 	terminal_unregister_callback(terminal_show_eeprom_value);	
+	terminal_unregister_callback(terminal_cmd_custom_show_can_status_msg);
 	terminal_unregister_callback(terminal_cmd_custom_app_mode_select);
 	terminal_unregister_callback(terminal_cmd_custom_can_terminal_resistor);
 	terminal_unregister_callback(terminal_cmd_custom_dps_control);
@@ -425,7 +434,29 @@ static void terminal_show_eeprom_value(int argc, const char **argv)
 		sscanf(argv[1], "%d", &d);
 
 		app_custom_show_eeprom_var(d);
-	} else commands_printf("This command requires one argument.\n");
+	} else commands_printf("This command requires one argument\n");
+}
+
+static void terminal_cmd_custom_show_can_status_msg(int argc, const char **argv)
+{
+	if (argc == 3) {
+		int id = -1;
+		int msg_type = -1;
+		sscanf(argv[1], "%d", &id);
+		sscanf(argv[2], "%d", &msg_type);
+
+		can_status_msg *stat_msg = comm_can_get_status_msg_id(id);
+		if(stat_msg!=0) {
+			if(msg_type==1) {
+			
+			commands_printf("pos = %.3f rad, vel = %.4f rad/sec, curr = %.2f A", 
+							(double)stat_msg->duty, (double)stat_msg->rpm, (double)stat_msg->current);
+			}
+		} else {
+			commands_printf("Id:%d is not sending Status Msg %d", id, msg_type);
+		}
+		 
+	} else commands_printf("This command requires two argument, or_cs [id] [msg_type], ex) or_cs 28 1\n");
 }
 
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv) {
@@ -813,7 +844,6 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	app_custom_can_terminal_resistor_set((bool)can_term_res);
 
 	int find_step = 0;
-	int polepair_number = 0;
 	float input_duty = 0;
 	float input_volt = 0;
 	float erpm_sum = 0;
@@ -833,8 +863,9 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	commands_plot_add_graph("rps");
 	commands_plot_add_graph("pos accum");
 	float samp = 0.0;
+	polepair_number = mcpwm_foc_get_polepair();
+
 	const volatile mc_configuration *conf = mc_interface_get_configuration();
-	polepair_number = conf->foc_encoder_ratio;
 
 	for(;;) {
 		// Check if it is time to stop.
