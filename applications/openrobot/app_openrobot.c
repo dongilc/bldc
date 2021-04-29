@@ -76,7 +76,7 @@ void app_openrobot_set_servo(float g_t, int c_mode);
 void app_openrobot_set_servo_gain(float kp, float ki);
 float app_openrobot_servo_controller(void);
 void app_openrobot_set_traj(float g_t, int c_mode);
-float app_openrobot_traj_controller(int c_mode_return);
+float app_openrobot_traj_controller(void);
 float app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_Amax(float start, float goal, float vmax, float amax, float dt);
 //int app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_T(float vmax, float T, float dt);
 //int app_openrobot_Trapezoidal_Traj_Gen_Given_Amax_and_T(float amax, float T, float dt);
@@ -141,8 +141,7 @@ typedef enum {
 	DPS_CONTROL_TIMEOUT,
 	DPS_CONTROL_DURATION,
 	SERVO_CONTROL,
-	TRAJ_CONTROL_TIMEOUT,
-	TRAJ_CONTROL_CONTINUOUS,
+	TRAJ_CONTROL,
 	RELEASE
 } CONTROL_MODE;
 
@@ -635,10 +634,10 @@ static void terminal_cmd_custom_traj_control(int argc, const char **argv) {
 		if(encoder_is_configured()) {
 			commands_printf("[traj control run] target:%.2fdeg, now:%.2f, Vmax:%.2f", 
 									(double)deg, (double)mcpwm_foc_get_pos_accum(), (double)Vel_maximum);
-			if(control_mode!=TRAJ_CONTROL_CONTINUOUS) {
+			if(control_mode!=TRAJ_CONTROL) {
 				traj_target = deg;
 				traj_start = mcpwm_foc_get_pos_accum();
-				control_mode = TRAJ_CONTROL_CONTINUOUS;
+				control_mode = TRAJ_CONTROL;
 			}
 			else commands_printf("Trajectory Controller is running...\n");
 		} else commands_printf("Encoder is not configured yet\n");
@@ -826,7 +825,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 						break;
 					case COMM_SET_TRAJ:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0 ;
-						app_openrobot_set_traj(value_set[i], TRAJ_CONTROL_TIMEOUT);
+						app_openrobot_set_traj(value_set[i], TRAJ_CONTROL);
 						break;
 					case COMM_SET_RELEASE:
 						ind += 4;
@@ -1259,7 +1258,7 @@ void app_openrobot_set_servo_gain(float kp, float ki)
 
 void app_openrobot_set_traj(float g_t, int c_mode)
 {
-	if(control_mode != TRAJ_CONTROL_TIMEOUT) 
+	if(control_mode != TRAJ_CONTROL) 
 	{
 		if(traj_target != g_t) {
 			traj_target = g_t;
@@ -1299,7 +1298,7 @@ float app_openrobot_servo_controller(void)
 	return dps_servo;
 }
 
-float app_openrobot_traj_controller(int c_mode_return)
+float app_openrobot_traj_controller(void)
 {
 	static float start = 0;
 	static float goal = 0;
@@ -1356,13 +1355,7 @@ float app_openrobot_traj_controller(int c_mode_return)
 	}
 	else
 	{
-		dps_target = 0;
-		v_prof = 0.;
-		dps_cnt = 0;
-		dps_target = 0.;
-		dps_duration_sec = 0;
-		
-		control_mode = c_mode_return;
+		control_mode = NONE;
 		traj_time = 0;
 		T = 0;	
 	}
@@ -1611,13 +1604,8 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			deg_ref = app_openrobot_genProfile(dps_target, (float)DPS_AMAX_DEFAULT, dt_rt);	
 		} break;
 
-		case TRAJ_CONTROL_CONTINUOUS: {
-			deg_ref = app_openrobot_traj_controller(NONE);
-			app_openrobot_control_enable();
-		} break;
-
-		case TRAJ_CONTROL_TIMEOUT: {
-			deg_ref = app_openrobot_traj_controller(DPS_CONTROL_TIMEOUT);
+		case TRAJ_CONTROL: {
+			deg_ref = app_openrobot_traj_controller();
 			app_openrobot_control_enable();
 		} break;
 
