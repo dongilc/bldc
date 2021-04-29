@@ -1258,8 +1258,11 @@ void app_openrobot_set_servo_gain(float kp, float ki)
 
 void app_openrobot_set_traj(float g_t, int c_mode)
 {
-	traj_target = g_t;
-	control_mode = c_mode;
+	if(control_mode != TRAJ_CONTROL) {
+		traj_target = g_t;
+		traj_start = mcpwm_foc_get_pos_accum();
+		control_mode = c_mode;
+	}
 }
 
 void app_openrobot_control_enable(void)
