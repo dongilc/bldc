@@ -138,7 +138,7 @@ static volatile uint32_t dps_cnt = 0;
 
 typedef enum {
 	NONE = 0,
-	DPS_CONTROL_CONTINUOUS,
+	DPS_CONTROL_TIMEOUT,
 	DPS_CONTROL_DURATION,
 	SERVO_CONTROL,
 	TRAJ_CONTROL,
@@ -439,7 +439,7 @@ static void terminal_cmd_custom_show_openrobot_conf(int argc, const char **argv)
 		(uint8_t)app_mode);
 	commands_printf("  can terminal resister on: %d", 
 		(uint8_t)can_term_res);
-	commands_printf("  motor control mode: %d (0:NONE, DPS_CONTROL_CONTINUOUS, DPS_CONTROL_DURATION, SERVO_CONTROL, RELEASE), control set: %d", 
+	commands_printf("  motor control mode: %d (0:NONE, DPS_CONTROL_TIMEOUT, DPS_CONTROL_DURATION, SERVO_CONTROL, RELEASE), control set: %d", 
 		(uint8_t)control_mode, (uint8_t)control_set);
 	commands_printf("  dps control Vmax: %.1f", 
 		(double)Vel_maximum);
@@ -809,7 +809,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 						break;
 					case COMM_SET_DPS:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0;
-						app_openrobot_set_dps(value_set[i], 0, DPS_CONTROL_CONTINUOUS);
+						app_openrobot_set_dps(value_set[i], 0, DPS_CONTROL_TIMEOUT);
 						break;
 					case COMM_SET_DPS_VMAX:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0;
@@ -1106,7 +1106,7 @@ static THD_FUNCTION(openrobot_thread, arg) {
 					if(find_step==1) app_openrobot_set_servo(100, SERVO_CONTROL);
 					if(find_step==2) app_openrobot_set_servo(2160, SERVO_CONTROL);
 					if(find_step==3) app_openrobot_set_servo(-10000, SERVO_CONTROL);
-					if(find_step==4) app_openrobot_set_dps(4000, 0, DPS_CONTROL_CONTINUOUS);
+					if(find_step==4) app_openrobot_set_dps(4000, 0, DPS_CONTROL_TIMEOUT);
 					if(find_step==5) app_openrobot_set_servo(0, SERVO_CONTROL);
 
 					commands_plot_set_graph(0);
@@ -1214,7 +1214,7 @@ void app_openrobot_set_dps(float d, float s, int c_mode)
 	dps_duration_sec = s;
 	control_mode = c_mode;
 
-	if(control_mode==DPS_CONTROL_CONTINUOUS) dps_cnt = 0;
+	if(control_mode==DPS_CONTROL_TIMEOUT) dps_cnt = 0;
 }
 
 void app_openrobot_set_dps_vmax(float Vmax, bool flash)
@@ -1259,9 +1259,14 @@ void app_openrobot_set_servo_gain(float kp, float ki)
 void app_openrobot_set_traj(float g_t, int c_mode)
 {
 	if(control_mode != TRAJ_CONTROL) {
-		traj_target = g_t;
-		traj_start = mcpwm_foc_get_pos_accum();
-		control_mode = c_mode;
+		if(traj_target != g_t) {
+			traj_target = g_t;
+			traj_start = mcpwm_foc_get_pos_accum();
+			control_mode = c_mode;
+		}
+		else {
+			app_openrobot_set_dps(0, 0, DPS_CONTROL_TIMEOUT);	
+		}
 	}
 }
 
@@ -1569,7 +1574,7 @@ static THD_FUNCTION(dps_control_thread, arg) {
 		} break;
 
 		// This is for ROS. Assumption: ROS Command sent periodically.
-		case DPS_CONTROL_CONTINUOUS: {
+		case DPS_CONTROL_TIMEOUT: {
 			if(dps_cnt/10000. <= DPS_CONTINUOUS_TIMEOUT) {
 				app_openrobot_control_enable();
 			}
