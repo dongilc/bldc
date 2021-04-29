@@ -39,5 +39,6 @@ GOTO제어를 SERVO제어라는 이름으로 바꾸었고 TRAJ 제어라는 걸 
 : or_dp (debug position control data), or_dc (debug comm_set data) added Finished
 
 2021-04-29
-: VESCuino Custom Encoder implimentation almost Finishing
-: VESCuino firmware 5.02 implimentation - arduino spi control
+: TODO - VESCuino Custom Encoder implimentation almost Finishing
+: TODO - VESCuino firmware 5.02 implimentation - arduino spi control
+: TODO - ROS에서 제어시 SERVO, TRAJ 제어이후 ROS 프로그램을 종료해도 Lock이 잡혀있게 된다. 이걸 풀도록 할지 유지할지 추후 결정 필요함.
