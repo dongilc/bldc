@@ -1356,10 +1356,15 @@ float app_openrobot_traj_controller(int c_mode_return)
 	}
 	else
 	{
+		dps_target = 0;
+		v_prof = 0.;
+		dps_cnt = 0;
+		dps_target = 0.;
+		dps_duration_sec = 0;
+		
 		control_mode = c_mode_return;
 		traj_time = 0;
 		T = 0;	
-		dps_target = 0;
 	}
 
 	return path;
