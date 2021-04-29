@@ -3,6 +3,13 @@
         "comm_can.h": "c",
         "datatypes.h": "c",
         "chrono": "c",
-        "kitech_motor_ifdef_210411.h": "c"
+        "kitech_motor_ifdef_210411.h": "c",
+        "app_vescuino_spi.h": "c",
+        "commands.h": "c",
+        "app_vescuino_interface.h": "c",
+        "app_vescuino.h": "c",
+        "encoder.h": "c",
+        "mcpwm_foc.h": "c",
+        "functional": "c"
     }
 }

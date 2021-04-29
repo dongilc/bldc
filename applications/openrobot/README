@@ -24,3 +24,20 @@
 2021-04-11
 : completed - set can_res_term status On at the usb connected device.
 : completed - build with mc_conf file using pre-setted header file. located at conf_general.h
+
+2021-04-19
+: TODO - ros-driver-side callback msg fix
+: TODO - Goto control and Traj control decoupling. using Vmax, Amax is more suitable traj control mode
+GOTO제어를 SERVO제어라는 이름으로 바꾸었고 TRAJ 제어라는 걸 새로 만들었는데 이게 normalized 된 상황에 대한 식들이라 사용이 오히려 불편한 느낌.
+기존의 SERVO(GOTO)제어에서 가속력 제어가 제대로 먹는 거라면 그냥 그럴 쓰는게 나은거 같음. -> 확인결과 goto 제어에서는 amax 가 효과없음. vmax만 효과있음.
+오히려 dps 제어에서는 amax가 의미 있음. 하지만 이 경우, 위치를 목표값으로 못주고 속도만 목표값으로 할당가능 그래서 traj 모드 필요
+: TODO - APP default setting as 1Mbps, CAN_STATUS_MSG_1 even after wizard setup
+
+2021-04-26
+: CAN Direct Control Method Finished
+: VESCular Traj Control Finished
+: or_dp (debug position control data), or_dc (debug comm_set data) added Finished
+
+2021-04-29
+: VESCuino Custom Encoder implimentation almost Finishing
+: VESCuino firmware 5.02 implimentation - arduino spi control

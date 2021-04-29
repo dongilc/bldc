@@ -358,6 +358,9 @@ void comm_can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len
 		send_buffer[ind++] = (uint8_t)(crc >> 8);
 		send_buffer[ind++] = (uint8_t)(crc & 0xFF);
 
+		//openrobot, crc value debug print
+		//commands_printf("can msg, crc16 data:0x%x, len:0x%x -> crch:0x%x, crcl:0x%x", data, len, (uint8_t)(crc >> 8), (uint8_t)(crc & 0xFF));
+
 		comm_can_transmit_eid_replace(controller_id |
 				((uint32_t)CAN_PACKET_PROCESS_RX_BUFFER << 8), send_buffer, ind++, true);
 	}

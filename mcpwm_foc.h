@@ -31,6 +31,8 @@ void mcpwm_foc_set_pos_accum(float pos_accum);
 void mcpwm_foc_print_pos_accum_stored(void);
 uint16_t mcpwm_foc_get_polepair(void);
 float mcpwm_foc_get_rps(void);
+int mcpwm_foc_check_sensor_mode(void);
+void mcpwm_foc_change_sensor_mode_encoder(void);
 #endif
 
 // Functions

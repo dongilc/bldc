@@ -31,9 +31,6 @@
 /* Driver constants.                                                         */
 /*===========================================================================*/
 
-#define SPI_SLAVE   FALSE
-#define SPI_MASTER  !(SPI_SLAVE)
-
 /*===========================================================================*/
 /* Driver pre-compile time settings.                                         */
 /*===========================================================================*/
@@ -416,15 +413,10 @@ typedef struct SPIDriver SPIDriver;
  */
 typedef void (*spicallback_t)(SPIDriver *spip);
 
-//openrobot - slave mode added
 /**
  * @brief   Driver configuration structure.
  */
 typedef struct {
-  /**
-   * @brief Operation complete callback or @p NULL.
-   */
-  bool                      role;
   /**
    * @brief Operation complete callback or @p NULL.
    */

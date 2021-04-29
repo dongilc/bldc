@@ -30,6 +30,7 @@
 
 //cdi
 #define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
+//#define HW60_IS_VESCUINO
 
 #ifdef HW60_IS_VESCULAR
 /////////////////////////// HW60_IS_VESCULAR /////////////////////////////////
@@ -47,6 +48,25 @@
 #elif defined(HW60_IS_VESCUINO)
 #define HW_SOURCE "hw_60_openrobot_vescuino.c"
 #define HW_HEADER "hw_60_openrobot_vescuino.h"
+#include "hw.h"
+
+// app setting custom precompilation
+#include "openrobot/appconf_openrobot.h"
+#define APP_CUSTOM_TO_USE            "openrobot/app_openrobot.c"
+
+// motor setting custom precompilation
+//#include "openrobot/mc_header_custom/kitech_motor_ifdef_id_14.h"
+
+#define USE_VESCUINO_PCB
+#define USE_DEBUG_PRINTF
+#define USE_DEBUG_LED_TOGGLE
+#define USE_I2C_FAST_400KHZ_MODE
+
+// Custom ABI Encoder with HALL/ENC Hybrid commutation using HW SPI Port.
+// Use SPI_SCK(A5):ENC_A, SPI_MISO(A6):ENC_B, SPI_nCS(A4):ENC_I
+// Initial Commutation is done by Hall Sensor and change the commutation to encoder just after index found
+#define USE_CUSTOM_ABI_ENCODER_AT_SPI   // If it is enabled, Arduino SPI Communication impossible
+//#define USE_ENC_CALCULATION_THREAD
 #endif
 
 // Settings and parameters to override

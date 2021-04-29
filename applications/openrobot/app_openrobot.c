@@ -35,6 +35,10 @@
 #include "buffer.h"
 #include "comm_can.h"
 #include "comm_usb_serial.h"
+//openrobot
+#include "packet.h"
+#include "app_openrobot_util.c"
+#include "app_openrobot_spi.c"
 
 #include <math.h>
 #include <string.h>
@@ -42,11 +46,10 @@
 
 // 
 #define USE_DPS_DT_PRINT			false
-#define USE_POSITION_DEBUG_PRINT	true
-#define USE_COMM_SET_DEBUG_PRINT	false
+#define USE_POSITION_DEBUG_PRINT	false //true
+#define USE_COMM_SET_DEBUG_PRINT	false //true
 #define USE_CAN_TERM_RESISTOR_ON 	true
 #define VESC_NUM_MAX				10
-#define SPI_FIXED_DATA_BYTE			255
 #define RAD2DEG						180./M_PI
 #define DEG2RAD						M_PI/180.
 #define RPM2RPS						2.*M_PI/60.
@@ -55,8 +58,8 @@
 #define DPS_VMAX_DEFAULT			10000.0		// default:25000.0, Maximum Value Cal.: max 58000 erpm / 12 polepair = 4800 rpm * 6 = 29000 dps
 #define DPS_AMAX_DEFAULT			100000.0	// default:100000.0
 #define DPS_CONTINUOUS_TIMEOUT		0.5			// dps control disabled when there is no continuous data for 0.5sec
-#define GOTO_KP_DEFAULT				20.0
-#define GOTO_KI_DEFAULT				0.
+#define SERVO_KP_DEFAULT				20.0
+#define SERVO_KI_DEFAULT				0.
 
 // Threads
 static THD_FUNCTION(openrobot_thread, arg);
@@ -69,42 +72,52 @@ void app_openrobot_set_dps(float d, float s, int c_mode);
 void app_openrobot_set_dps_vmax(float Vmax, bool flash);
 void app_openrobot_set_dps_amax(float Amax, bool flash);
 void app_openrobot_control_enable(void);
-void app_openrobot_set_goto(float g_t, int c_mode);
-void app_openrobot_set_goto_gain(float kp, float ki);
-float app_openrobot_goto_controller(void);
+void app_openrobot_set_servo(float g_t, int c_mode);
+void app_openrobot_set_servo_gain(float kp, float ki);
+float app_openrobot_servo_controller(void);
+void app_openrobot_set_traj(float g_t, int c_mode);
+float app_openrobot_traj_controller(void);
+float app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_Amax(float start, float goal, float vmax, float amax, float dt);
+//int app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_T(float vmax, float T, float dt);
+//int app_openrobot_Trapezoidal_Traj_Gen_Given_Amax_and_T(float amax, float T, float dt);
+//void app_openrobot_Trapezoidal_Path_Gen(float start, float goal, int total_i);
+//static float traj[3000] = {0.};
 
-static void terminal_show_eeprom_conf(int argc, const char **argv);
-static void terminal_show_openrobot_conf(int argc, const char **argv);
-static void terminal_show_position_now(int argc, const char **argv);
-static void terminal_show_eeprom_value(int argc, const char **argv);
+static void terminal_cmd_custom_show_eeprom_conf(int argc, const char **argv);
+static void terminal_cmd_custom_show_openrobot_conf(int argc, const char **argv);
+static void terminal_cmd_custom_show_position_now(int argc, const char **argv);
+static void terminal_cmd_custom_show_eeprom_value(int argc, const char **argv);
 static void terminal_cmd_custom_show_can_status_msg(int argc, const char **argv);
+static void terminal_cmd_custom_show_debug_position_status(int argc, const char **argv);
+static void terminal_cmd_custom_show_comm_set_data(int argc, const char **argv);
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv);
 static void terminal_cmd_custom_can_terminal_resistor(int argc, const char **argv);
 static void terminal_cmd_custom_dps_control(int argc, const char **argv);
-static void terminal_cmd_custom_goto_control(int argc, const char **argv);
-static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv);
+static void terminal_cmd_custom_servo_control(int argc, const char **argv);
+static void terminal_cmd_custom_servo_zero_pos(int argc, const char **argv);
+static void terminal_cmd_custom_traj_control(int argc, const char **argv);
 static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv);
 static void terminal_cmd_custom_find_torque_constant(int argc, const char **argv);
-static void terminal_cmd_custom_goto_control_exam(int argc, const char **argv);
+static void terminal_cmd_custom_servo_control_exam(int argc, const char **argv);
 static void terminal_cmd_custom_motor_release(int argc, const char **argv);
 static void terminal_cmd_custom_realtime_plot(int argc, const char **argv);
 static void terminal_cmd_custom_set_param(int argc, const char **argv);
-static void terminal_cmd_custom_set_goto_gain(int argc, const char **argv);
+static void terminal_cmd_custom_set_servo_gain(int argc, const char **argv);
 static void terminal_cmd_reboot(int argc, const char **argv);
 
 // Private variables
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
 static volatile bool is_find_kt_running = false;
-static volatile bool is_goto_exam_running = false;
+static volatile bool is_servo_exam_running = false;
 static volatile bool is_exp_plot_running = false;
 static volatile uint8_t app_mode;
 static volatile bool can_term_res;
 static volatile float dt_rt = DPS_DT;
 static volatile float Vel_maximum = DPS_VMAX_DEFAULT;
 static volatile float Acc_maximum = DPS_AMAX_DEFAULT;
-static volatile float Goto_Kp = GOTO_KP_DEFAULT;
-static volatile float Goto_Ki = GOTO_KI_DEFAULT;
+static volatile float servo_Kp = SERVO_KP_DEFAULT;
+static volatile float servo_Ki = SERVO_KI_DEFAULT;
 static volatile float Zero_Pos;
 static volatile float v_prof;
 static volatile float s_prof;
@@ -113,7 +126,10 @@ static volatile float dps_target;
 static volatile float dps_now;
 static volatile float dps_duration_sec;
 static volatile float dps_error_int = 0.;
-static volatile float goto_target;
+static volatile float servo_target;
+static volatile float traj_time;
+static volatile float traj_start;
+static volatile float traj_target;
 static volatile int control_mode = 0;
 static volatile int control_set = 0;
 static uint8_t controller_id = 0;	
@@ -124,7 +140,8 @@ typedef enum {
 	NONE = 0,
 	DPS_CONTROL_CONTINUOUS,
 	DPS_CONTROL_DURATION,
-	GOTO_CONTROL,
+	SERVO_CONTROL,
+	TRAJ_CONTROL,
 	RELEASE
 } CONTROL_MODE;
 
@@ -151,7 +168,8 @@ typedef enum  {
 	ARDUINO_DUE,
 	ARDUINO_TEENSY_32,
 	ARDUINO_TEENSY_36,
-	USB
+	USB,
+	CAN
 } OPENROBOT_HOST_TYPE;
 
 typedef enum  {
@@ -159,7 +177,8 @@ typedef enum  {
 	COMM_SET_DPS,
 	COMM_SET_DPS_VMAX,
 	COMM_SET_DPS_AMAX,
-	COMM_SET_GOTO
+	COMM_SET_SERVO,
+	COMM_SET_TRAJ
 } COMM_PACKET_ID_OPENROBOT;
 
 //////////////// EEPROM DATA ////////////////
@@ -222,27 +241,37 @@ void app_custom_start(void) {
 	terminal_register_command_callback(
 			"or_eep",
 			"Show EEPROM stored configuration.",
-			"", terminal_show_eeprom_conf);
+			"", terminal_cmd_custom_show_eeprom_conf);
 	
 	terminal_register_command_callback(
 			"or_conf",
 			"Show OpenRobot App current configuration.",
-			"", terminal_show_openrobot_conf);
+			"", terminal_cmd_custom_show_openrobot_conf);
 
 	terminal_register_command_callback(
 			"or_pos",
 			"Show the encoder position value now",
-			"", terminal_show_position_now);
+			"", terminal_cmd_custom_show_position_now);
 
 	terminal_register_command_callback(
 			"or_sev",
 			"Show eeprom variable value",
-			"", terminal_show_eeprom_value);
+			"", terminal_cmd_custom_show_eeprom_value);
 
 	terminal_register_command_callback(
 			"or_scs",
 			"Show can status messages",
 			"[id] [msg_type]", terminal_cmd_custom_show_can_status_msg);
+
+	terminal_register_command_callback(
+			"or_dp",
+			"Show debug position control status",
+			"", terminal_cmd_custom_show_debug_position_status);
+
+	terminal_register_command_callback(
+			"or_dc",
+			"Show debug comm set data",
+			"", terminal_cmd_custom_show_comm_set_data);
 
 	terminal_register_command_callback(
 			"or_app",
@@ -260,14 +289,19 @@ void app_custom_start(void) {
 			"[dps] [sec]", terminal_cmd_custom_dps_control);
 	
 	terminal_register_command_callback(
-			"or_goto",
+			"or_servo",
 			"Print the degree command value",
-			"[deg]", terminal_cmd_custom_goto_control);
-
+			"[deg]", terminal_cmd_custom_servo_control);
+	
 	terminal_register_command_callback(
 			"or_gz",
-			"Goto Zero Position",
-			"", terminal_cmd_custom_goto_zero_pos);
+			"Go to Zero Position",
+			"", terminal_cmd_custom_servo_zero_pos);
+
+	terminal_register_command_callback(
+			"or_traj",
+			"Print the degree command value",
+			"[deg]", terminal_cmd_custom_traj_control);
 
 	terminal_register_command_callback(
 			"or_sz",
@@ -280,9 +314,9 @@ void app_custom_start(void) {
 			"", terminal_cmd_custom_find_torque_constant);
 
 	terminal_register_command_callback(
-			"or_ge",
-			"Goto Control Exam",
-			"", terminal_cmd_custom_goto_control_exam);
+			"or_se",
+			"Servo Control Exam",
+			"", terminal_cmd_custom_servo_control_exam);
 
 	terminal_register_command_callback(
 			"or_re",
@@ -300,9 +334,9 @@ void app_custom_start(void) {
 			"[Vmax] [Amax]", terminal_cmd_custom_set_param);
 
 	terminal_register_command_callback(
-			"or_gg",
-			"Print the goto control Kp and Ki value",
-			"[Kp] [Ki]", terminal_cmd_custom_set_goto_gain);
+			"or_sg",
+			"Print the servo control Kp and Ki value",
+			"[Kp] [Ki]", terminal_cmd_custom_set_servo_gain);
 
 	terminal_register_command_callback(
 			"or_rb",
@@ -316,23 +350,26 @@ void app_custom_start(void) {
 void app_custom_stop(void) {
 	mc_interface_set_pwm_callback(0);
 
-	terminal_unregister_callback(terminal_show_eeprom_conf);
-	terminal_unregister_callback(terminal_show_openrobot_conf);	
-	terminal_unregister_callback(terminal_show_position_now);	
-	terminal_unregister_callback(terminal_show_eeprom_value);	
+	terminal_unregister_callback(terminal_cmd_custom_show_eeprom_conf);
+	terminal_unregister_callback(terminal_cmd_custom_show_openrobot_conf);	
+	terminal_unregister_callback(terminal_cmd_custom_show_position_now);	
+	terminal_unregister_callback(terminal_cmd_custom_show_eeprom_value);	
 	terminal_unregister_callback(terminal_cmd_custom_show_can_status_msg);
 	terminal_unregister_callback(terminal_cmd_custom_app_mode_select);
+	terminal_unregister_callback(terminal_cmd_custom_show_debug_position_status);
+	terminal_unregister_callback(terminal_cmd_custom_show_comm_set_data);
 	terminal_unregister_callback(terminal_cmd_custom_can_terminal_resistor);
 	terminal_unregister_callback(terminal_cmd_custom_dps_control);
-	terminal_unregister_callback(terminal_cmd_custom_goto_control);
-	terminal_unregister_callback(terminal_cmd_custom_goto_zero_pos);
+	terminal_unregister_callback(terminal_cmd_custom_servo_control);
+	terminal_unregister_callback(terminal_cmd_custom_servo_zero_pos);
+	terminal_unregister_callback(terminal_cmd_custom_traj_control);
 	terminal_unregister_callback(terminal_cmd_custom_set_zero_pos_now);	
 	terminal_unregister_callback(terminal_cmd_custom_find_torque_constant);		
-	terminal_unregister_callback(terminal_cmd_custom_goto_control_exam);		
+	terminal_unregister_callback(terminal_cmd_custom_servo_control_exam);		
 	terminal_unregister_callback(terminal_cmd_custom_motor_release);
 	terminal_unregister_callback(terminal_cmd_custom_realtime_plot);
 	terminal_unregister_callback(terminal_cmd_custom_set_param);
-	terminal_unregister_callback(terminal_cmd_custom_set_goto_gain);
+	terminal_unregister_callback(terminal_cmd_custom_set_servo_gain);
 	terminal_unregister_callback(terminal_cmd_reboot);
 
 	stop_now = true;
@@ -348,7 +385,7 @@ void app_custom_configure(app_configuration *conf) {
 
 // Callback function for the terminal command with arguments.
 // Terminal command to show configuration
-static void terminal_show_eeprom_conf(int argc, const char **argv)
+static void terminal_cmd_custom_show_eeprom_conf(int argc, const char **argv)
 {
 	(void)argc;
 	(void)argv;
@@ -391,18 +428,18 @@ static void terminal_show_eeprom_conf(int argc, const char **argv)
 	commands_printf("");
 }
 
-static void terminal_show_openrobot_conf(int argc, const char **argv)
+static void terminal_cmd_custom_show_openrobot_conf(int argc, const char **argv)
 {
 	(void)argc;
 	(void)argv;
 
 	// print eeprom stored configuration
 	commands_printf("OpenRobot App, current Configuration Values:");
-	commands_printf("  openrobot app mode: %d", 
+	commands_printf("  openrobot app mode: %d (0:VESCular, VESCuino)", 
 		(uint8_t)app_mode);
 	commands_printf("  can terminal resister on: %d", 
 		(uint8_t)can_term_res);
-	commands_printf("  motor control mode: %d (0:NONE, DPS_CONTROL_CONTINUOUS, DPS_CONTROL_DURATION, GOTO_CONTROL, RELEASE), control set: %d", 
+	commands_printf("  motor control mode: %d (0:NONE, DPS_CONTROL_CONTINUOUS, DPS_CONTROL_DURATION, SERVO_CONTROL, RELEASE), control set: %d", 
 		(uint8_t)control_mode, (uint8_t)control_set);
 	commands_printf("  dps control Vmax: %.1f", 
 		(double)Vel_maximum);
@@ -413,7 +450,7 @@ static void terminal_show_openrobot_conf(int argc, const char **argv)
 	commands_printf("");
 }
 
-static void terminal_show_position_now(int argc, const char **argv)
+static void terminal_cmd_custom_show_position_now(int argc, const char **argv)
 {
 	(void)argc;
 	(void)argv;
@@ -432,7 +469,7 @@ static void terminal_show_position_now(int argc, const char **argv)
 	commands_printf("");
 }
 
-static void terminal_show_eeprom_value(int argc, const char **argv)
+static void terminal_cmd_custom_show_eeprom_value(int argc, const char **argv)
 {
 	if (argc == 2) {
 		int d = -1;
@@ -462,6 +499,36 @@ static void terminal_cmd_custom_show_can_status_msg(int argc, const char **argv)
 		}
 		 
 	} else commands_printf("This command requires two argument, or_cs [id] [msg_type], ex) or_cs 28 1\n");
+}
+
+static void terminal_cmd_custom_show_debug_position_status(int argc, const char **argv)
+{
+	(void)argc;
+	(void)argv;
+
+	if(openrobot_dps_pos_debug_print == true) {
+		openrobot_dps_pos_debug_print = false;
+		commands_printf("[Position Control Debug Print Disabled]");
+	}
+	else {
+		openrobot_dps_pos_debug_print = true;
+		commands_printf("[Position Control Debug Print Enabled]");
+	}
+}
+
+static void terminal_cmd_custom_show_comm_set_data(int argc, const char **argv)
+{
+	(void)argc;
+	(void)argv;
+
+	if(openrobot_comm_set_debug_print == true) {
+		openrobot_comm_set_debug_print = false;
+		commands_printf("[COMM_SET Data Debug Print Disabled]");
+	}
+	else {
+		openrobot_comm_set_debug_print = true;
+		commands_printf("[COMM_SET Data Debug Print Enabled]");
+	}
 }
 
 static void terminal_cmd_custom_app_mode_select(int argc, const char **argv) {
@@ -527,19 +594,19 @@ static void terminal_cmd_custom_dps_control(int argc, const char **argv) {
 	} else commands_printf("This command requires two argument.\n");
 }
 
-static void terminal_cmd_custom_goto_control(int argc, const char **argv) {
+static void terminal_cmd_custom_servo_control(int argc, const char **argv) {
 	if (argc == 2) {
 		float deg = -1;
 		sscanf(argv[1], "%f", &deg);
 
 		if(encoder_is_configured()) {
-			commands_printf("[goto control run] target:%.2fdeg, now:%.2f", (double)deg, (double)mcpwm_foc_get_pos_accum());
-			app_openrobot_set_goto(deg, GOTO_CONTROL);
+			commands_printf("[servo control run] target:%.2fdeg, now:%.2f", (double)deg, (double)mcpwm_foc_get_pos_accum());
+			app_openrobot_set_servo(deg, SERVO_CONTROL);
 		} else commands_printf("Encoder is not configured yet\n");	
 	} else commands_printf("This command requires one argument.\n");
 }
 
-static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv) {
+static void terminal_cmd_custom_servo_zero_pos(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
@@ -553,10 +620,28 @@ static void terminal_cmd_custom_goto_zero_pos(int argc, const char **argv) {
 	}
 
 	if(encoder_is_configured()) {
-		commands_printf("[goto zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pos_accum());
-		goto_target = enc_deg_now;
-		control_mode = GOTO_CONTROL;
+		commands_printf("[go to zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pos_accum());
+		servo_target = enc_deg_now;
+		control_mode = SERVO_CONTROL;
 	} else commands_printf("Encoder is not configured yet\n");
+}
+
+static void terminal_cmd_custom_traj_control(int argc, const char **argv) {
+	if (argc == 2) {
+		float deg = -1;
+		sscanf(argv[1], "%f", &deg);
+
+		if(encoder_is_configured()) {
+			commands_printf("[traj control run] target:%.2fdeg, now:%.2f, Vmax:%.2f", 
+									(double)deg, (double)mcpwm_foc_get_pos_accum(), (double)Vel_maximum);
+			if(control_mode!=TRAJ_CONTROL) {
+				traj_target = deg;
+				traj_start = mcpwm_foc_get_pos_accum();
+				control_mode = TRAJ_CONTROL;
+			}
+			else commands_printf("Trajectory Controller is running...\n");
+		} else commands_printf("Encoder is not configured yet\n");
+	} else commands_printf("This command requires one argument.\n");
 }
 
 static void terminal_cmd_custom_set_zero_pos_now(int argc, const char **argv) {
@@ -586,12 +671,12 @@ static void terminal_cmd_custom_find_torque_constant(int argc, const char **argv
 	is_find_kt_running = true;
 }
 
-static void terminal_cmd_custom_goto_control_exam(int argc, const char **argv) {
+static void terminal_cmd_custom_servo_control_exam(int argc, const char **argv) {
 	(void)argc;
 	(void)argv;
 
 	// Caution! motor will rotate for 5 sec
-	is_goto_exam_running = true;
+	is_servo_exam_running = true;
 }
 
 static void terminal_cmd_custom_motor_release(int argc, const char **argv) {
@@ -600,8 +685,8 @@ static void terminal_cmd_custom_motor_release(int argc, const char **argv) {
 
 	control_mode = RELEASE;
 	commands_printf("[release motor]");
-	commands_printf("Debugging print initializing values of 'pos_accum'");
-	mcpwm_foc_print_pos_accum_stored();
+	//commands_printf("Debugging print initializing values of 'pos_accum'");
+	//mcpwm_foc_print_pos_accum_stored();
 }
 
 static void terminal_cmd_custom_realtime_plot(int argc, const char **argv) {
@@ -627,18 +712,18 @@ static void terminal_cmd_custom_set_param(int argc, const char **argv) {
 
 		app_openrobot_set_dps_vmax(Vmax, true);
 		app_openrobot_set_dps_amax(Amax, true);	
-	} else commands_printf("This command requires two argument. Current Goto Gain: Vmax:%.2f, Amax:%.2f\n", (double)Vel_maximum, (double)Acc_maximum);
+	} else commands_printf("This command requires two argument. Current servo Gain: Vmax:%.2f, Amax:%.2f\n", (double)Vel_maximum, (double)Acc_maximum);
 }
 
-static void terminal_cmd_custom_set_goto_gain(int argc, const char **argv) {
+static void terminal_cmd_custom_set_servo_gain(int argc, const char **argv) {
 	if (argc == 3) {
 		float kp = 0;
 		float ki = 0;
 		sscanf(argv[1], "%f", &kp);
 		sscanf(argv[2], "%f", &ki);
 
-		app_openrobot_set_goto_gain(kp, ki);
-	} else commands_printf("This command requires two argument. Current Goto Gain: Kp:%.2f, Ki:%.2f\n", (double)Goto_Kp, (double)Goto_Ki);
+		app_openrobot_set_servo_gain(kp, ki);
+	} else commands_printf("This command requires two argument. Current servo Gain: Kp:%.2f, Ki:%.2f\n", (double)servo_Kp, (double)servo_Ki);
 }
 
 static void terminal_cmd_reboot(int argc, const char **argv)
@@ -679,7 +764,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 	if(openrobot_comm_set_debug_print==1) {
 		commands_printf("custom rx done. len=%d\r\n", len);
 		commands_printf("data:");
-		for(unsigned int i=0; i<len; i++) commands_printf("%d ",data[i]);
+		for(unsigned int i=0; i<len; i++) commands_printf("(0x%x)%d ", data[i], data[i]);
 	}
 
 	// Rx Part
@@ -734,9 +819,13 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0;
 						app_openrobot_set_dps_amax(value_set[i], false);
 						break;
-					case COMM_SET_GOTO:
+					case COMM_SET_SERVO:
 						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0 ;
-						app_openrobot_set_goto(value_set[i], GOTO_CONTROL);
+						app_openrobot_set_servo(value_set[i], SERVO_CONTROL);
+						break;
+					case COMM_SET_TRAJ:
+						value_set[i] = (float)buffer_get_int32(data, &ind) / 1000.0 ;
+						app_openrobot_set_traj(value_set[i], TRAJ_CONTROL);
 						break;
 					case COMM_SET_RELEASE:
 						ind += 4;
@@ -755,7 +844,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 				uint8_t send_buffer[10];
 				send_buffer[k++] = COMM_CUSTOM_APP_DATA;	// CAN forward message is repacked as CUSTOM_APP_DATA again
 				send_buffer[k++] = openrobot_host_model;
-				send_buffer[k++] = 1;				// obiously 1
+				send_buffer[k++] = 1;				// target number of vesc using can msg, obiously 1, 
 				send_buffer[k++] = TARGET_VESC_ID;	// forwarded CAN dev is set as TARGET_VESC_ID
 				send_buffer[k++] = comm_set[i];
 				for(int n=0; n<4; n++) send_buffer[k++] = data[ind++];
@@ -785,7 +874,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4
-	buffer_append_float16(send_buffer, mc_interface_get_rpm(), 1e2, &ind); // +2
+	buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
 
 	// from can_status_msgs
 	for(int i=0; i<can_devs_num; i++)
@@ -809,7 +898,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours, 1e4, &ind); // +4	
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours_charged, 1e4, &ind); // +4	
 			buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
-			buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2
+			buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2 - currently this value is rps ()
 		}
 	}
 	commands_send_packet(send_buffer, ind);
@@ -833,6 +922,22 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_AMAX)) Acc_maximum = eeprom_custom_var_temp.as_float;
 	if(conf_general_read_eeprom_var_custom(&eeprom_custom_var_temp, EEP_ENC_ZERO_POS)) Zero_Pos = eeprom_custom_var_temp.as_float;
 	
+#ifdef HW60_IS_VESCUINO
+	if(app_mode != APP_VESCuino) {
+		app_mode = APP_VESCuino;
+		// storing current setting to eeprom
+		eeprom_custom_var_temp.as_float = (float)app_mode;
+		conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_APP_SELECT);
+	}
+#elif defined HW60_IS_VESCULAR
+	if(app_mode != APP_VESCular) {
+		app_mode = APP_VESCular;
+		// storing current setting to eeprom
+		eeprom_custom_var_temp.as_float = (float)app_mode;
+		conf_general_store_eeprom_var_custom(&eeprom_custom_var_temp, EEP_APP_SELECT);
+	}
+#endif
+
 	//
 	if(app_mode == APP_VESCular) {
 		// Start uart communication: recommended usage UART:VESC-Tool, USB:ROS
@@ -843,8 +948,29 @@ static THD_FUNCTION(openrobot_thread, arg) {
 
 		chThdCreateStatic(dps_control_thread_wa, sizeof(dps_control_thread_wa), 
 					NORMALPRIO, dps_control_thread, NULL);
+
+		app_custom_can_terminal_resistor_set((bool)can_term_res);
 	}
-	app_custom_can_terminal_resistor_set((bool)can_term_res);
+	else if(app_mode == APP_VESCuino) {
+		// Initialize packet handler
+		packet_init(send_packet_spi_slave, process_packet_spi_slave, PACKET_HANDLER);
+
+		// set custom app as openrobot app, To set the RX function.
+		commands_set_app_data_handler(send_openrobot_app_data);
+
+#ifndef USE_CUSTOM_ABI_ENCODER_AT_SPI
+		// SPI interface
+		spi1_peripheral_setting_slave();
+		// SPI Start
+		spiStart(&HW_SPI_DEV, &spicfg);
+		// SPI Start Slave Threads
+		chThdCreateStatic(spi_slave_read_thread_wa, sizeof(spi_slave_read_thread_wa), NORMALPRIO, spi_slave_read_thread, NULL);
+		commands_printf("\r\nVESCuino SPI RX Thread Start");
+#else
+		commands_printf("\r\nUse CUSTOM ABI Encoder at SPI Port");
+#endif
+	}
+	
 
 	int find_step = 0;
 	float input_duty = 0;
@@ -956,12 +1082,12 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		}
 
 		// Run your logic here. A lot of functionality is available in mc_interface.h.
-		if (is_goto_exam_running)
+		if (is_servo_exam_running)
 		{	
 			if(encoder_is_configured()) {
 				find_step++;
 				if(find_step==1) {
-					commands_printf("Goto Control Example");
+					commands_printf("Servo Control Example");
 					chThdSleepMilliseconds(500);
 					commands_printf("Caution! The motor will start rotating in 5 seconds.");
 					commands_printf("5...");
@@ -977,11 +1103,11 @@ static THD_FUNCTION(openrobot_thread, arg) {
 				}
 
 				for (int i=0; i<500; i++) {	
-					if(find_step==1) app_openrobot_set_goto(100, GOTO_CONTROL);
-					if(find_step==2) app_openrobot_set_goto(2160, GOTO_CONTROL);
-					if(find_step==3) app_openrobot_set_goto(-10000, GOTO_CONTROL);
+					if(find_step==1) app_openrobot_set_servo(100, SERVO_CONTROL);
+					if(find_step==2) app_openrobot_set_servo(2160, SERVO_CONTROL);
+					if(find_step==3) app_openrobot_set_servo(-10000, SERVO_CONTROL);
 					if(find_step==4) app_openrobot_set_dps(4000, 0, DPS_CONTROL_CONTINUOUS);
-					if(find_step==5) app_openrobot_set_goto(0, GOTO_CONTROL);
+					if(find_step==5) app_openrobot_set_servo(0, SERVO_CONTROL);
 
 					commands_plot_set_graph(0);
 					commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
@@ -999,14 +1125,14 @@ static THD_FUNCTION(openrobot_thread, arg) {
 
 				mc_interface_set_current(0);
 				if(find_step>=6) {
-					is_goto_exam_running = false;
+					is_servo_exam_running = false;
 					find_step = 0;
 					samp = 0.;
 				}
 			}
 			else {
 				commands_printf("Encoder is not configured yet, Abort process");
-				is_goto_exam_running = false;
+				is_servo_exam_running = false;
 				find_step = 0;
 				samp = 0.;
 			}
@@ -1043,8 +1169,10 @@ static THD_FUNCTION(openrobot_thread, arg) {
 				//terminal_cmd_custom_can_terminal_resistor(2, argv);
 
 				// CAN Terminal Resistor Temporally On
-				app_custom_can_terminal_resistor_set(1);
-				commands_printf("Can Terminal Resistor Temporally On, At the USB connected VESC.\n");
+				if(app_mode == APP_VESCular) {
+					app_custom_can_terminal_resistor_set(1);
+					commands_printf("Can Terminal Resistor Temporally On, At the USB connected VESCular.\n");
+				}
 			}
 		}
 
@@ -1115,17 +1243,23 @@ void app_openrobot_set_dps_amax(float Amax, bool flash)
 	} else commands_printf("Invalid Vmax Value (input Amax from 0 ~ %.1f)\n", (double)DPS_AMAX_DEFAULT);
 }
 
-void app_openrobot_set_goto(float g_t, int c_mode)
+void app_openrobot_set_servo(float g_t, int c_mode)
 {
-	goto_target = g_t;
+	servo_target = g_t;
 	control_mode = c_mode;
 }
 
-void app_openrobot_set_goto_gain(float kp, float ki)
+void app_openrobot_set_servo_gain(float kp, float ki)
 {
-	Goto_Kp = kp;
-	Goto_Ki = ki;
-	commands_printf("Set Goto Controller Gain, Kp:%.2f, Ki:%.2f", (double)kp, (double)ki);
+	servo_Kp = kp;
+	servo_Ki = ki;
+	commands_printf("Set Servo Controller Gain, Kp:%.2f, Ki:%.2f", (double)kp, (double)ki);
+}
+
+void app_openrobot_set_traj(float g_t, int c_mode)
+{
+	traj_target = g_t;
+	control_mode = c_mode;
 }
 
 void app_openrobot_control_enable(void)
@@ -1137,27 +1271,266 @@ void app_openrobot_control_enable(void)
 	control_set = 1;
 }
 
-float app_openrobot_goto_controller(void)
+float app_openrobot_servo_controller(void)
 {
-	float dps_goto;
-	float dps_goto_err;
+	float dps_servo;
+	float dps_servo_err;
 
 	if (control_set == 0) {
 		dps_error_int = 0;
 	}
 	
-	dps_goto_err = goto_target - mcpwm_foc_get_pos_accum();
-	dps_error_int += dps_goto_err * dt_rt;
+	dps_servo_err = servo_target - mcpwm_foc_get_pos_accum();
+	dps_error_int += dps_servo_err * dt_rt;
 
-	dps_goto = Goto_Kp*dps_goto_err + Goto_Ki*dps_error_int; // 7:optimal, 8:overshoot little, 6.:no overshoot
-	if(fabs(dps_goto) >= (double)Vel_maximum) {
-		if(dps_goto>0)	dps_goto = Vel_maximum;
-		else 	 		dps_goto = -Vel_maximum;
+	dps_servo = servo_Kp*dps_servo_err + servo_Ki*dps_error_int; // 7:optimal, 8:overshoot little, 6.:no overshoot
+	if(fabs(dps_servo) >= (double)Vel_maximum) {
+		if(dps_servo>0)	dps_servo = Vel_maximum;
+		else 	 		dps_servo = -Vel_maximum;
 	}
 
-	return dps_goto;
+	return dps_servo;
 }
 
+float app_openrobot_traj_controller(void)
+{
+	static float start = 0;
+	static float goal = 0;
+
+	static float v = 0;
+	static float a = 0;
+	static float s = 0;
+	static float T = 0;
+	static float v_sq = 0;
+	static float path = 0;
+
+	start = traj_start;
+	goal = traj_target;
+
+	if((goal!=start) && T==0) {
+		v = Vel_maximum/fabsf(goal - start);
+		v_sq = powf(v,2);
+		a = v_sq*1.5;//2.;
+
+		if(v_sq/a > 1) {
+			commands_printf("error - amax should be larger then %.3f", pow(v,2));
+			control_mode = NONE;
+		}
+		else {
+			traj_time = 0;
+			T = (a + v_sq)/(v*a);
+		}
+	}
+
+	if(T >= traj_time)
+	{
+		if(traj_time >= 0 && traj_time <= (v/a)) {
+			//sddot = a;
+			//sdot = a*time;
+			s = 0.5*a*powf(traj_time,2);
+		}
+			
+		if(traj_time > (v/a) && traj_time <= (T-v/a)) {
+			//sddot = 0;
+			//sdot = v;
+			s = v*traj_time - 0.5*powf(v,2)/a;
+		}
+			
+		if(traj_time > (T-v/a) && traj_time <= T) {
+			//sddot = -a;
+			//sdot = a*(T-time);
+			s = (2*a*v*T - 2*powf(v,2) - powf(a,2)*powf((traj_time-T),2))/(2*a);
+		}
+
+		path = start + s*(goal-start);
+		//commands_printf("time:%.3f, path:%.3f", (double)time, (double)path);
+
+		traj_time += dt_rt;
+	}
+	else
+	{
+		control_mode = NONE;
+		traj_time = 0;
+		T = 0;	
+	}
+
+	return path;
+}
+/*
+float app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_Amax(float start, float goal, float vmax, float amax, float dt)
+{
+    float v = vmax;
+    float a = amax;
+    
+    if(powf(v,2)/a > 1) {
+		commands_printf("amax should be larger then %.3f", pow(v,2));
+		return false;
+	}
+
+    float T = (a + powf(v,2))/(v*a);
+	commands_printf("time to go:%.3fsec", (double)T);
+    
+    float time = 0;
+	float sddot = 0;
+	float sdot = 0;
+	float s = 0;
+	int i = 0;
+	int debug_print = 0;
+
+	// time variables
+	uint32_t ts = timer_time_now();
+	float td = 0;
+    while(T >= time)
+	{
+        if(time >= 0 && time <= (v/a)) {
+            sddot = a;
+            sdot = a*time;
+            s = 0.5*a*powf(time,2);
+		}
+            
+        if(time > (v/a) && time <= (T-v/a)) {
+            sddot = 0;
+            sdot = v;
+            s = v*time - 0.5*powf(v,2)/a;
+		}
+            
+        if(time > (T-v/a) && time <= T) {
+            sddot = -a;
+            sdot = a*(T-time);
+            s = (2*a*v*T - 2*powf(v,2) - powf(a,2)*powf((time-T),2))/(2*a);
+		}
+
+		// set position reference value
+		deg_ref = start + s*(goal-start);
+		td = timer_seconds_elapsed_since(ts);	// end time check
+
+		// position control on
+		control_set=1;	 
+		i++;
+		//chThdSleepMilliseconds(1);	// 1000Hz
+
+		if(debug_print==1) {
+			commands_printf("time:%.3f / s:%.3f, sdot:%.3f, ssdot:%.3f", 
+							(double)(time), (double)(s), (double)(sdot), (double)(sddot));
+		}
+
+        time += dt;
+	}
+	return td;
+}
+*/
+/*
+int app_openrobot_Trapezoidal_Traj_Gen_Given_Vmax_and_T(float vmax, float T, float dt) 
+{
+    float v = vmax;
+	float a = 0;
+    
+    if(v*T > 1 && v*T <= 2) {
+		a = powf(v,2)/(v*T-1);
+	}
+	else {
+		commands_printf("vmax should be less then %.3f and larger than %.3f", (double)(2/T), (double)(1/T));
+		return false;
+	}        
+    
+    float time = 0;
+	float sddot = 0;
+	float sdot = 0;
+	float s = 0;
+	int i = 0;
+    
+    while(T >= time)
+	{
+        if(time >= 0 && time <= (v/a)) {
+            sddot = a;
+            sdot = a*time;
+            s = 0.5*a*powf(time,2);
+		}
+            
+        if(time > (v/a) && time <= (T-v/a)) {
+            sddot = 0;
+            sdot = v;
+            s = v*time - 0.5*powf(v,2)/a;
+		}
+
+        if(time > (T-v/a) && time <= T) {
+            sddot = -a;
+            sdot = a*(T-time);
+            s = (2*a*v*T - 2*powf(v,2) - powf(a,2)*powf((time-T),2))/(2*a);
+		}
+
+		traj[i++] = s;
+		commands_printf("time:%.3f / s:%.3f, sdot:%.3f, ssdot:%.3f", 
+						(double)(time), (double)(s), (double)(sdot), (double)(sddot));
+
+        time += dt;
+	}
+
+    return i;
+}
+
+int app_openrobot_Trapezoidal_Traj_Gen_Given_Amax_and_T(float amax, float T, float dt) 
+{
+    float a = amax;
+	float v = 0;
+    
+    if(a*powf(T,2) >= 4) {     
+        v = 0.5*(a*T - powf(a,0.5)*powf((a*powf(T,2)-4),0.5));
+	} 
+	else {
+		commands_printf("amax should be larger then %.3f", (double)(4./powf(T,2)));
+		return false;         
+	}
+
+    float time = 0;
+	float sddot = 0;
+	float sdot = 0;
+	float s = 0;
+	int i = 0;
+
+    while(T >= time)
+	{
+        if(time >= 0 && time <= (v/a)) {
+            sddot = a;
+            sdot = a*time;
+            s = 0.5*a*powf(time,2);
+		}
+            
+        if(time > (v/a) && time <= (T-v/a)) {
+            sddot = 0;
+            sdot = v;
+            s = v*time - 0.5*powf(v,2)/a;
+		}
+            
+        if(time > (T-v/a) && time <= T) {
+            sddot = -a;
+            sdot = a*(T-time);
+            s = (2*a*v*T - 2*powf(v,2) - powf(a,2)*powf((time-T),2))/(2*a);
+		}
+
+		traj[i++] = s;
+		//commands_printf("time:%.3f / s:%.3f, sdot:%.3f, ssdot:%.3f", 
+		//				(double)(time), (double)(s), (double)(sdot), (double)(sddot));
+        
+        time += dt;
+	}
+
+    return i;
+}
+
+void app_openrobot_Trapezoidal_Path_Gen(float start, float goal, int total_i) {
+	float pos = 0;
+
+	int i = 0;
+	while(total_i > i) {
+		deg_ref = start + traj[i]*(goal-start);
+		// position control on
+		control_set=1;	 
+		i++;
+		chThdSleepMicroseconds(10000);	// 100Hz
+	}
+}
+*/
 // DPS Control Thread
 static THD_FUNCTION(dps_control_thread, arg) {
 	(void)arg;
@@ -1188,10 +1561,11 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			dps_target = 0.;
 			dps_duration_sec = 0;
 			control_set = 0;
+			traj_time = 0;
 			control_mode = NONE;
 		} break;
 
-		// This is for ROS
+		// This is for ROS. Assumption: ROS Command sent periodically.
 		case DPS_CONTROL_CONTINUOUS: {
 			if(dps_cnt/10000. <= DPS_CONTINUOUS_TIMEOUT) {
 				app_openrobot_control_enable();
@@ -1215,13 +1589,18 @@ static THD_FUNCTION(dps_control_thread, arg) {
 			dps_cnt++;
 		} break;
 
-		case GOTO_CONTROL: {
-			dps_target = app_openrobot_goto_controller();
+		case SERVO_CONTROL: {
+			dps_target = app_openrobot_servo_controller();
 			app_openrobot_control_enable();
-			// USE maximum Acceleration value at GOTO_Control, Speed regulated by Vmax at GOTO_Control
-			// The Goto Control Kp. Ki gain is dependent on the Vmax, Amax
+			// USE maximum Acceleration value at SERVO_Control, Speed regulated by Vmax at SERVO_Control
+			// The Servo Control Kp. Ki gain is dependent on the Vmax, Amax
 			// For hard servo control, it is good to use Acceleration as Maximum
 			deg_ref = app_openrobot_genProfile(dps_target, (float)DPS_AMAX_DEFAULT, dt_rt);	
+		} break;
+
+		case TRAJ_CONTROL: {
+			deg_ref = app_openrobot_traj_controller();
+			app_openrobot_control_enable();
 		} break;
 
 		default:

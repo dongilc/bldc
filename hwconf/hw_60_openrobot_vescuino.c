@@ -29,12 +29,21 @@
 // Variables
 static volatile bool i2c_running = false;
 
+#ifndef USE_I2C_FAST_400KHZ_MODE
 // I2C configuration
 static const I2CConfig i2cfg = {
 		OPMODE_I2C,
 		100000,
 		STD_DUTY_CYCLE
 };
+#else
+// I2C configuration - 400kHz Mode
+static const I2CConfig i2cfg = {
+		OPMODE_I2C,
+		400000,
+		FAST_DUTY_CYCLE_2
+};
+#endif
 
 void hw_init_gpio(void) {
 	// GPIO clock enable
@@ -42,6 +51,7 @@ void hw_init_gpio(void) {
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
 
 	// LEDs
 	palSetPadMode(GPIOB, 0,
@@ -91,33 +101,36 @@ void hw_init_gpio(void) {
 	palSetPadMode(GPIOA, 1, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOA, 2, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOA, 3, PAL_MODE_INPUT_ANALOG);
-	palSetPadMode(GPIOA, 5, PAL_MODE_INPUT_ANALOG);
-	palSetPadMode(GPIOA, 6, PAL_MODE_INPUT_ANALOG);
+	//palSetPadMode(GPIOA, 5, PAL_MODE_INPUT_ANALOG);	//openrobot, for spi use
+	//palSetPadMode(GPIOA, 6, PAL_MODE_INPUT_ANALOG);	//openrobot, for spi use
 
 	palSetPadMode(GPIOC, 0, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 1, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 2, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 3, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 4, PAL_MODE_INPUT_ANALOG);
-#if !defined(HW60_IS_MK3) && !defined(HW60_IS_MK4)
 	palSetPadMode(GPIOC, 5, PAL_MODE_INPUT_ANALOG);
-#endif
 
 	drv8301_init();
+
+	//openrobot
+	palSetPadMode(GPIOD, 11, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palSetPadMode(GPIOD, 12, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palSetPadMode(GPIOD, 13, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 }
 
 void hw_setup_adc_channels(void) {
 	// ADC1 regular channels
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_10, 2, ADC_SampleTime_15Cycles);
-	ADC_RegularChannelConfig(ADC1, ADC_Channel_5, 3, ADC_SampleTime_15Cycles);
+	//ADC_RegularChannelConfig(ADC1, ADC_Channel_5, 3, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_14, 4, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_Vrefint, 5, ADC_SampleTime_15Cycles);
 
 	// ADC2 regular channels
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_1, 1, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_11, 2, ADC_SampleTime_15Cycles);
-	ADC_RegularChannelConfig(ADC2, ADC_Channel_6, 3, ADC_SampleTime_15Cycles);
+	//ADC_RegularChannelConfig(ADC2, ADC_Channel_6, 3, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_15, 4, ADC_SampleTime_15Cycles);
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_0, 5, ADC_SampleTime_15Cycles);
 

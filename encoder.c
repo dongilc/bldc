@@ -26,6 +26,9 @@
 #include "utils.h"
 #include <math.h>
 
+#include "mcpwm_foc.h"	//openrobot
+#include "commands.h"	//openrobot
+
 // Defines
 #define AS5047P_READ_ANGLECOM		(0x3FFF | 0x4000 | 0x8000) // This is just ones
 #define AS5047_SAMPLE_RATE_HZ		20000
@@ -104,6 +107,11 @@ static uint32_t sincos_signal_above_max_error_cnt = 0;
 static float sincos_signal_low_error_rate = 0.0;
 static float sincos_signal_above_max_error_rate = 0.0;
 
+//openrobot
+#ifdef USE_CUSTOM_ABI_ENCODER_AT_SPI
+static bool hall_enc_hybrid_switch = false;
+#endif
+
 static SerialConfig TS5700N8501_uart_cfg = {
 		2500000,
 		0,
@@ -125,6 +133,7 @@ static SerialConfig TS5700N8501_uart_cfg = {
 #ifdef HW_SPI_DEV
 //MT6816 max clk freq: 15.625MHz
 static const SPIConfig mt6816_spi_cfg = {
+		SPI_MASTER,	//openrobot-spi role selection required
 		NULL,
 		SPI_SW_CS_GPIO,
 		SPI_SW_CS_PIN,
@@ -261,6 +270,7 @@ void encoder_deinit(void) {
 	sincos_signal_above_max_error_rate = 0.0;
 }
 
+#ifndef USE_CUSTOM_ABI_ENCODER_AT_SPI
 void encoder_init_abi(uint32_t counts) {
 	EXTI_InitTypeDef   EXTI_InitStructure;
 
@@ -306,6 +316,57 @@ void encoder_init_abi(uint32_t counts) {
 
 	mode = ENCODER_MODE_ABI;
 }
+#else
+void encoder_init_abi(uint32_t counts) {
+	EXTI_InitTypeDef   EXTI_InitStructure;
+
+	//openrobot
+	// Initialize variables
+
+	//index_found = true;	// cheat as if encoder index is already found
+	hall_enc_hybrid_switch = false;
+	enc_counts = counts;
+
+	// Use SPI port as ENCODER Port
+	// Enc A = SCK, Enc B = MISO, Enc I = nCS
+	palSetPadMode(HW_SPI_PORT_SCK, HW_SPI_PIN_SCK, PAL_MODE_ALTERNATE(HW_ENC_TIM_AF));		// ENCODER A - SPI SCK (A5)
+	palSetPadMode(HW_SPI_PORT_MISO, HW_SPI_PIN_MISO, PAL_MODE_ALTERNATE(HW_ENC_TIM_AF));	// ENCODER B - SPI MISO (A6) 
+
+	// Enable timer clock
+	HW_ENC_TIM_CLK_EN();
+
+	// Enable SYSCFG clock
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+
+	TIM_EncoderInterfaceConfig (HW_ENC_TIM, TIM_EncoderMode_TI12,
+			TIM_ICPolarity_Rising,
+			TIM_ICPolarity_Rising);
+	TIM_SetAutoreload(HW_ENC_TIM, enc_counts - 1);
+
+	// Filter
+	HW_ENC_TIM->CCMR1 |= 6 << 12 | 6 << 4;
+	HW_ENC_TIM->CCMR2 |= 6 << 4;
+
+	TIM_Cmd(HW_ENC_TIM, ENABLE);
+
+	// Interrupt on index pulse
+
+	// Connect EXTI Line to pin
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOA, EXTI_PinSource4);	// ENCODER I - SPI nCS (A4)
+
+	// Configure EXTI Line
+	EXTI_InitStructure.EXTI_Line = EXTI_Line4;
+	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&EXTI_InitStructure);
+
+	// Enable and set EXTI Line Interrupt to the highest priority
+	nvicEnableVector(EXTI4_IRQn, 0);
+
+	mode = ENCODER_MODE_ABI;
+}
+#endif
 
 void encoder_init_as5047p_spi(void) {
 	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
@@ -536,6 +597,11 @@ float encoder_read_deg(void) {
 		break;
 	}
 
+//openrobot
+#ifdef USE_CUSTOM_ABI_ENCODER_AT_SPI	
+	angle = ((float)HW_ENC_TIM->CNT * 360.0) / (float)enc_counts;
+#endif
+
 	return angle;
 }
 
@@ -592,6 +658,24 @@ void encoder_reset(void) {
 			bad_pulses = 0;
 		}
 	}
+
+#ifdef USE_CUSTOM_ABI_ENCODER_AT_SPI
+	//openrobot
+	if ((index_found==true) && (hall_enc_hybrid_switch==false))
+	{
+		//app_vescuino_dps_set_enc_offset((double)mc_interface_get_pid_pos_now());
+
+		HW_ENC_TIM->CNT = 0;
+		index_found = true;
+		commands_printf("Custom ABI Encoder Index Found.\n");
+		//bad_pulses = 0;
+
+		//change foc_sensor_mode from hall to encoder just after encoder index found
+		mcpwm_foc_change_sensor_mode_encoder();
+		hall_enc_hybrid_switch = true;
+		commands_printf("Hall / Encoder Hybrid Commutation Enabled.\n");
+	}
+#endif
 }
 
 // returns true for even number of ones (no parity error according to AS5047 datasheet

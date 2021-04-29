@@ -4246,4 +4246,14 @@ float mcpwm_foc_get_rps(void) {
 	const volatile float erpm2rps = 2.*M_PI/60./mcpwm_foc_get_polepair();
 	return (float)(mcpwm_foc_get_rpm_fast()*erpm2rps);
 }
+
+//openrobot
+int mcpwm_foc_check_sensor_mode(void) {
+	return m_motor_1.m_conf->foc_sensor_mode;
+}
+//openrobot
+void mcpwm_foc_change_sensor_mode_encoder(void) {
+	m_motor_1.m_conf->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
+}
+
 #endif

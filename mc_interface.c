@@ -246,6 +246,11 @@ void mc_interface_init(void) {
 	}
 #endif
 
+	//openrobot
+#ifdef USE_CUSTOM_ABI_ENCODER_AT_SPI
+	encoder_init_abi(m_motor_1.m_conf.m_encoder_counts);
+#endif
+
 	// Initialize selected implementation
 	switch (motor_now()->m_conf.motor_type) {
 	case MOTOR_TYPE_BLDC:
