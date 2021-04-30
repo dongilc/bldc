@@ -37,6 +37,7 @@ GOTO제어를 SERVO제어라는 이름으로 바꾸었고 TRAJ 제어라는 걸 
 : CAN Direct Control Method Finished
 : VESCular Traj Control Finished
 : or_dp (debug position control data), or_dc (debug comm_set data) added Finished
+: 서보모드에서는 Kp 컨트롤러가 연속적으로 작용해서 외란이 있을때 마치 I제어기 처럼 움직이는데 진동이 좀 있다. 그런데 감속기가 있는 시스템에서는 문제없을듯하며 pid게인튜닝으로도 해결가능한 수준임.
 
 2021-04-29
 : TODO - VESCuino Custom Encoder implimentation almost Finishing
