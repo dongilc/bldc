@@ -712,7 +712,7 @@ static void terminal_cmd_custom_set_param(int argc, const char **argv) {
 
 		app_openrobot_set_dps_vmax(Vmax, true);
 		app_openrobot_set_dps_amax(Amax, true);	
-	} else commands_printf("This command requires two argument. Current servo Gain: Vmax:%.2f, Amax:%.2f\n", (double)Vel_maximum, (double)Acc_maximum);
+	} else commands_printf("This command requires two argument. Vmax:%.2f, Amax:%.2f\n", (double)Vel_maximum, (double)Acc_maximum);
 }
 
 static void terminal_cmd_custom_set_servo_gain(int argc, const char **argv) {
@@ -723,7 +723,7 @@ static void terminal_cmd_custom_set_servo_gain(int argc, const char **argv) {
 		sscanf(argv[2], "%f", &ki);
 
 		app_openrobot_set_servo_gain(kp, ki);
-	} else commands_printf("This command requires two argument. Current servo Gain: Kp:%.2f, Ki:%.2f\n", (double)servo_Kp, (double)servo_Ki);
+	} else commands_printf("This command requires two argument. [Current servo Gain] Kp:%.2f, Ki:%.2f\n", (double)servo_Kp, (double)servo_Ki);
 }
 
 static void terminal_cmd_reboot(int argc, const char **argv)
@@ -1258,11 +1258,18 @@ void app_openrobot_set_servo_gain(float kp, float ki)
 
 void app_openrobot_set_traj(float g_t, int c_mode)
 {
+	// ROS Periodic message filtering
 	if(control_mode != TRAJ_CONTROL) 
 	{
-		if(traj_target != g_t) {
+		if(traj_target != g_t) 
+		{
 			traj_target = g_t;
 			traj_start = mcpwm_foc_get_pos_accum();
+			control_mode = c_mode;
+		}
+		else
+		{
+			traj_start = traj_target = g_t;
 			control_mode = c_mode;
 		}
 	}
