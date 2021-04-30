@@ -873,7 +873,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 	buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind); // +2
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
 	buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
-	buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4
+	buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4 this is factored by 100
 	buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
 
 	// from can_status_msgs
@@ -883,7 +883,7 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 		can_st_msg = comm_can_get_status_msg_id(can_id);		// +1
 		can_st_msg_2 = comm_can_get_status_msg_2_id(can_id);	// +1
 		can_st_msg_3 = comm_can_get_status_msg_3_id(can_id);	// +1
-		can_st_msg_4= comm_can_get_status_msg_4_id(can_id);		// +1
+		can_st_msg_4= comm_can_get_status_msg_4_id(can_id);	// +1
 		can_st_msg_5 = comm_can_get_status_msg_5_id(can_id);	// +1
 
 		if(can_st_msg!=0) // +27 byte
@@ -897,7 +897,8 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 			buffer_append_float16(send_buffer, can_st_msg->duty, 1e3, &ind); // +2
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours, 1e4, &ind); // +4	
 			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours_charged, 1e4, &ind); // +4	
-			buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
+			//buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
+			buffer_append_float32(send_buffer, can_st_msg->duty, 100.0, &ind); // +4 - currently this is accumulated position in radian (instead tacho_value)
 			buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2 - currently this value is rps ()
 		}
 	}
