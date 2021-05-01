@@ -944,15 +944,23 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		// Start uart communication: recommended usage UART:VESC-Tool, USB:ROS
 		app_uartcomm_start();	
 
-		// set custom app as openrobot app, To set the RX function.
-		commands_set_app_data_handler(send_openrobot_app_data);
-
+		// dps control thread start
 		chThdCreateStatic(dps_control_thread_wa, sizeof(dps_control_thread_wa), 
 					NORMALPRIO, dps_control_thread, NULL);
+
+		// set custom app as openrobot app, To set the RX function.
+		commands_set_app_data_handler(send_openrobot_app_data);
 
 		app_custom_can_terminal_resistor_set((bool)can_term_res);
 	}
 	else if(app_mode == APP_VESCuino) {
+		// Start uart communication: recommended usage UART:VESC-Tool, USB:ROS
+		app_uartcomm_start();
+
+		// dps control thread start
+		chThdCreateStatic(dps_control_thread_wa, sizeof(dps_control_thread_wa), 
+					NORMALPRIO, dps_control_thread, NULL);
+
 		// Initialize packet handler
 		packet_init(send_packet_spi_slave, process_packet_spi_slave, PACKET_HANDLER);
 

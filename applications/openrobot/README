@@ -40,6 +40,7 @@ GOTO제어를 SERVO제어라는 이름으로 바꾸었고 TRAJ 제어라는 걸 
 : 서보모드에서는 Kp 컨트롤러가 연속적으로 작용해서 외란이 있을때 마치 I제어기 처럼 움직이는데 진동이 좀 있다. 그런데 감속기가 있는 시스템에서는 문제없을듯하며 pid게인튜닝으로도 해결가능한 수준임.
 
 2021-04-29
-: TODO - VESCuino Custom Encoder implimentation almost Finishing
+: VESCuino Custom Encoder implimentation Finished
+: TODO - Encoder Calculation Thread (과거), rpm_fast 와 비교해보기
 : TODO - VESCuino firmware 5.02 implimentation - arduino spi control
-: TODO - ROS에서 제어시 SERVO, TRAJ 제어이후 ROS 프로그램을 종료해도 Lock이 잡혀있게 된다. 이걸 풀도록 할지 유지할지 추후 결정 필요함.
+: TODO - ROS에서 제어시 SERVO, TRAJ 제어이후 ROS 프로그램을 종료해도 Lock이 잡혀있게 된다. 이걸 풀도록 할지 유지할지 추후 결정 필요함. 이건 유지하는 걸로 결정 (Release를 통해 수동으로 해제하도록)

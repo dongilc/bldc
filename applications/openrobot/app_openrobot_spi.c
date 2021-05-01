@@ -13,7 +13,6 @@
 #define VESCUINO_STACK_NUM_MAX			10
 #define SPI_ERROR_CNT_FOR_REBOOT		5
 
-#ifdef USE_VESCUINO_PCB
 /*
  * SPI Slave Pins
  */
@@ -34,7 +33,6 @@
 #define SPI_DEBUG_LED_TOGGLE()		palTogglePad(HW_SPI_PORT_DEBUG, HW_SPI_PIN_DEBUG)
 #define SPI_ARDUINO_nRESET_LOW()	palClearPad(HW_SPI_PORT_RESET, HW_SPI_PIN_RESET)
 #define SPI_ARDUINO_nRESET_HIGH()	palSetPad(HW_SPI_PORT_RESET, HW_SPI_PIN_RESET)
-#endif
 
 static unsigned char spi_tx_bytes[SPI_FIXED_DATA_BYTE];
 static uint8_t spi_debug_print = 0;
@@ -75,7 +73,7 @@ void spi1_peripheral_setting_slave(void)
 	palSetPadMode(HW_SPI_PORT_MOSI, HW_SPI_PIN_MOSI, PAL_MODE_ALTERNATE(HW_SPI_GPIO_AF));   /* MOSI.    */
 	palSetPadMode(HW_SPI_PORT_NSS, HW_SPI_PIN_NSS, PAL_MODE_INPUT_PULLUP);
 
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 	// Slave RX Ready - Output
 	palSetPadMode(HW_SPI_PORT_SRXRD, HW_SPI_PIN_SRXRD, PAL_MODE_OUTPUT_PUSHPULL);// | PAL_STM32_OSPEED_HIGHEST); //PAL_STM32_OTYPE_OPENDRAIN
 	palClearPad(HW_SPI_PORT_SRXRD, HW_SPI_PIN_SRXRD);
@@ -154,7 +152,7 @@ static THD_FUNCTION(spi_slave_read_thread, arg) {
 		spi_read_dt_us = ST2US(time_elapsed);
 
 		// SPI data exchange
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 		SPI_Rx_RDY_SET_LOW();
 #endif
 
@@ -183,7 +181,7 @@ static THD_FUNCTION(spi_slave_read_thread, arg) {
 		}
 		else {
 			// No error
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 			SPI_Rx_RDY_SET_HIGH();
 #endif
 			spi_process_error_cnt = 0;

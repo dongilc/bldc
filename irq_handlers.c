@@ -33,6 +33,7 @@ CH_IRQ_HANDLER(ADC1_2_3_IRQHandler) {
 	CH_IRQ_EPILOGUE();
 }
 
+#ifndef USE_CUSTOM_ABI_ENCODER_AT_SPI
 CH_IRQ_HANDLER(HW_ENC_EXTI_ISR_VEC) {
 	if (EXTI_GetITStatus(HW_ENC_EXTI_LINE) != RESET) {
 		encoder_reset();
@@ -41,6 +42,19 @@ CH_IRQ_HANDLER(HW_ENC_EXTI_ISR_VEC) {
 		EXTI_ClearITPendingBit(HW_ENC_EXTI_LINE);
 	}
 }
+#else
+//openrobot
+#define HW_HYB_ENC_EXTI_LINE		EXTI_Line4
+#define HW_HYB_ENC_EXTI_ISR_VEC		EXTI4_IRQHandler
+CH_IRQ_HANDLER(HW_HYB_ENC_EXTI_ISR_VEC) {
+	if (EXTI_GetITStatus(HW_HYB_ENC_EXTI_LINE) != RESET) {
+		encoder_reset();
+
+		// Clear the EXTI line pending bit
+		EXTI_ClearITPendingBit(HW_HYB_ENC_EXTI_LINE);
+	}
+}
+#endif
 
 CH_IRQ_HANDLER(HW_ENC_TIM_ISR_VEC) {
 	if (TIM_GetITStatus(HW_ENC_TIM, TIM_IT_Update) != RESET) {

@@ -30,7 +30,7 @@ void spi1_peripheral_setting_slave(void)
 	palSetPadMode(HW_SPI_PORT_MOSI, HW_SPI_PIN_MOSI, PAL_MODE_ALTERNATE(HW_SPI_GPIO_AF));   /* MOSI.    */
 	palSetPadMode(HW_SPI_PORT_NSS, HW_SPI_PIN_NSS, PAL_MODE_INPUT_PULLUP);
 
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 	// Slave RX Ready - Output
 	palSetPadMode(HW_SPI_PORT_SRXRD, HW_SPI_PIN_SRXRD, PAL_MODE_OUTPUT_PUSHPULL);// | PAL_STM32_OSPEED_HIGHEST); //PAL_STM32_OTYPE_OPENDRAIN
 	palClearPad(HW_SPI_PORT_SRXRD, HW_SPI_PIN_SRXRD);
@@ -407,7 +407,7 @@ static THD_FUNCTION(spi_slave_read_thread, arg) {
 		}
 
 		// SPI data exchange
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 		SPI_Rx_RDY_SET_LOW();
 #endif
 		while(spi_start_flag==0 && SPI_CS_READ()) {
@@ -434,7 +434,7 @@ static THD_FUNCTION(spi_slave_read_thread, arg) {
 		}
 		else {
 			// No error
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_ARDUINO_SPI
 			SPI_Rx_RDY_SET_HIGH();
 #endif
 			spi_process_error_cnt = 0;

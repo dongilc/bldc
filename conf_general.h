@@ -29,8 +29,8 @@
 #include "datatypes.h"
 
 //cdi
-#define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
-//#define HW60_IS_VESCUINO
+//#define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
+#define HW60_IS_VESCUINO
 
 #ifdef HW60_IS_VESCULAR
 /////////////////////////// HW60_IS_VESCULAR /////////////////////////////////
@@ -57,14 +57,19 @@
 // motor setting custom precompilation
 //#include "openrobot/mc_header_custom/kitech_motor_ifdef_id_14.h"
 
-#define USE_VESCUINO_PCB
+//#define USE_VESCUINO_UART2
+//#define USE_VESCUINO_ARDUINO_SPI
 #define USE_DEBUG_PRINTF
 #define USE_DEBUG_LED_TOGGLE
 #define USE_I2C_FAST_400KHZ_MODE
 
 // Custom ABI Encoder with HALL/ENC Hybrid commutation using HW SPI Port.
-// Use SPI_SCK(A5):ENC_A, SPI_MISO(A6):ENC_B, SPI_nCS(A4):ENC_I
 // Initial Commutation is done by Hall Sensor and change the commutation to encoder just after index found
+// Use SPI_MISO(A5):ENC_A, SPI_MOSI(A6):ENC_B, SPI_nCS(A4):ENC_I (VESCUINO VER0.1)
+// Use SPI_SCK(A5):ENC_A,  SPI_MISO(A6):ENC_B, SPI_nCS(A4):ENC_I (VESCUINO VER0.1A, VER0.2)
+// USE VESC-Tool Setting: 
+// General - Sensor Port Mode (Hall Sensors), General - ABI Encoder Counts (4채배된 Pulse), 
+// FOC - General - Sensor Mode (Auto Change from Hall to Encoder after index found), FOC - Encoder - Offset & ratio 세팅되어있어야함.
 #define USE_CUSTOM_ABI_ENCODER_AT_SPI   // If it is enabled, Arduino SPI Communication impossible
 //#define USE_ENC_CALCULATION_THREAD
 #endif

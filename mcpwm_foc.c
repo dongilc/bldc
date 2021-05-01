@@ -4252,8 +4252,8 @@ int mcpwm_foc_check_sensor_mode(void) {
 	return m_motor_1.m_conf->foc_sensor_mode;
 }
 //openrobot
-void mcpwm_foc_change_sensor_mode_encoder(void) {
-	m_motor_1.m_conf->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
+void mcpwm_foc_change_sensor_mode(uint8_t mode) {
+	m_motor_1.m_conf->foc_sensor_mode = mode;
 }
 
 #endif

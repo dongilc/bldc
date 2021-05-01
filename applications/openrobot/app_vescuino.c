@@ -705,7 +705,7 @@ void app_custom_start(void)
 	// Start USART Driver
 	// modifying required at mcuconf.h and halconf.h for using Serial Driver
 	// Baudrate Setting -> #define SERIAL_DEFAULT_BITRATE @halconf.h
-#ifdef USE_VESCUINO_PCB
+#ifdef USE_VESCUINO_UART2
 	sdStart(&SERIAL_DRIVER, NULL);
 	palSetPadMode(HW_UART2_TX_PORT, HW_UART2_TX_PIN, PAL_MODE_ALTERNATE(HW_UART2_GPIO_AF) |
 			PAL_STM32_OSPEED_HIGHEST |
