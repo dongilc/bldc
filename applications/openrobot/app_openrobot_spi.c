@@ -81,9 +81,7 @@ void spi1_peripheral_setting_slave(void)
 	// Arduino Reset Pin - Output, Default High
 	palSetPadMode(HW_SPI_PORT_RESET, HW_SPI_PIN_RESET, PAL_MODE_OUTPUT_PUSHPULL);
 	palSetPad(HW_SPI_PORT_RESET, HW_SPI_PIN_RESET);
-#endif
 
-#ifdef USE_DEBUG_LED_TOGGLE
 	// Debug Pin - Output
 	palSetPadMode(HW_SPI_PORT_DEBUG, HW_SPI_PIN_DEBUG, PAL_MODE_OUTPUT_PUSHPULL);// | PAL_STM32_OSPEED_HIGHEST); //PAL_STM32_OTYPE_OPENDRAIN
 	palClearPad(HW_SPI_PORT_DEBUG, HW_SPI_PIN_DEBUG);

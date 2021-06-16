@@ -169,7 +169,7 @@ typedef enum  {
 	ARDUINO_TEENSY_32,
 	ARDUINO_TEENSY_36,
 	USB,
-	CAN
+	CAN_DIRECT_MSG
 } OPENROBOT_HOST_TYPE;
 
 typedef enum  {
@@ -434,6 +434,7 @@ static void terminal_cmd_custom_show_openrobot_conf(int argc, const char **argv)
 	(void)argv;
 
 	// print eeprom stored configuration
+	commands_printf("\nFirmware Compiled Date: %s %s", __DATE__, __TIME__);
 	commands_printf("OpenRobot App, current Configuration Values:");
 	commands_printf("  openrobot app mode: %d (0:VESCular, VESCuino)", 
 		(uint8_t)app_mode);
@@ -622,7 +623,7 @@ static void terminal_cmd_custom_servo_zero_pos(int argc, const char **argv) {
 	if(encoder_is_configured()) {
 		commands_printf("[go to zero position] target:%.2fdeg, now:%.2f", (double)enc_deg_now, (double)mcpwm_foc_get_pos_accum());
 		servo_target = enc_deg_now;
-		control_mode = SERVO_CONTROL;
+		app_openrobot_set_servo(servo_target, SERVO_CONTROL);
 	} else commands_printf("Encoder is not configured yet\n");
 }
 
@@ -853,56 +854,60 @@ static void send_openrobot_app_data(unsigned char *data, unsigned int len) {
 		}
 	}
 
-	// Reply Part - custom msg return values
-	ind = 0;
-	uint8_t send_buffer[SPI_FIXED_DATA_BYTE] = {0,};
-	send_buffer[ind++] = COMM_CUSTOM_APP_DATA;	// +1
-
-	// can dev numbers
-	uint8_t can_devs_num = 0;
-	can_devs_num = get_number_of_can_status();
-	send_buffer[ind++] = can_devs_num;	// +1
-
-	// common return value
-	send_buffer[ind++] = app_get_configuration()->controller_id;	// +1
-	buffer_append_float16(send_buffer, GET_INPUT_VOLTAGE(), 1e1, &ind); // +2
-	buffer_append_float16(send_buffer, mc_interface_temp_fet_filtered(), 1e1, &ind); // +2
-	buffer_append_float16(send_buffer, mc_interface_temp_motor_filtered(), 1e1, &ind); // +2
-	buffer_append_float16(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind); // +2
-	buffer_append_float16(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind); // +2
-	buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind); // +2
-	buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
-	buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
-	buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4 this is factored by 100
-	buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
-
-	// from can_status_msgs
-	for(int i=0; i<can_devs_num; i++)
+	// No reply needed when CAN Direct msg 
+	if((openrobot_host_model==USB) || (openrobot_host_model==ARDUINO_MEGA) || (openrobot_host_model==ARDUINO_DUE))	
 	{
-		uint8_t can_id = active_can_devs[i];
-		can_st_msg = comm_can_get_status_msg_id(can_id);		// +1
-		can_st_msg_2 = comm_can_get_status_msg_2_id(can_id);	// +1
-		can_st_msg_3 = comm_can_get_status_msg_3_id(can_id);	// +1
-		can_st_msg_4= comm_can_get_status_msg_4_id(can_id);	// +1
-		can_st_msg_5 = comm_can_get_status_msg_5_id(can_id);	// +1
+		// Reply Part - custom msg return values
+		ind = 0;
+		uint8_t send_buffer[SPI_FIXED_DATA_BYTE] = {0,};
+		send_buffer[ind++] = COMM_CUSTOM_APP_DATA;	// +1
 
-		if(can_st_msg!=0) // +27 byte
+		// can dev numbers
+		uint8_t can_devs_num = 0;
+		can_devs_num = get_number_of_can_status();
+		send_buffer[ind++] = can_devs_num;	// +1
+
+		// common return value
+		send_buffer[ind++] = app_get_configuration()->controller_id;	// +1
+		buffer_append_float16(send_buffer, GET_INPUT_VOLTAGE(), 1e1, &ind); // +2
+		buffer_append_float16(send_buffer, mc_interface_temp_fet_filtered(), 1e1, &ind); // +2
+		buffer_append_float16(send_buffer, mc_interface_temp_motor_filtered(), 1e1, &ind); // +2
+		buffer_append_float16(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind); // +2
+		buffer_append_float16(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind); // +2
+		buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind); // +2
+		buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind); // +4
+		buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind); // +4
+		buffer_append_float32(send_buffer, mc_interface_get_tachometer_value(false), 1, &ind); // +4 this is factored by 100
+		buffer_append_float16(send_buffer, mcpwm_foc_get_rps(), 1e2, &ind); // +2
+
+		// from can_status_msgs
+		for(int i=0; i<can_devs_num; i++)
 		{
-			send_buffer[ind++] = can_id;
-			buffer_append_float16(send_buffer, can_st_msg_5->v_in, 1e1, &ind); // +2
-			buffer_append_float16(send_buffer, can_st_msg_4->temp_fet, 1e1, &ind); // +2
-			buffer_append_float16(send_buffer, can_st_msg_4->temp_motor, 1e1, &ind); // +2
-			buffer_append_float16(send_buffer, can_st_msg->current, 1e2, &ind); // +2
-			buffer_append_float16(send_buffer, can_st_msg_4->current_in, 1e2, &ind); // +2
-			buffer_append_float16(send_buffer, can_st_msg->duty, 1e3, &ind); // +2
-			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours, 1e4, &ind); // +4	
-			buffer_append_float32(send_buffer, can_st_msg_3->watt_hours_charged, 1e4, &ind); // +4	
-			//buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
-			buffer_append_float32(send_buffer, can_st_msg->duty, 100.0, &ind); // +4 - currently this is accumulated position in radian (instead tacho_value)
-			buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2 - currently this value is rps ()
+			uint8_t can_id = active_can_devs[i];
+			can_st_msg = comm_can_get_status_msg_id(can_id);		// +1
+			can_st_msg_2 = comm_can_get_status_msg_2_id(can_id);	// +1
+			can_st_msg_3 = comm_can_get_status_msg_3_id(can_id);	// +1
+			can_st_msg_4= comm_can_get_status_msg_4_id(can_id);	// +1
+			can_st_msg_5 = comm_can_get_status_msg_5_id(can_id);	// +1
+
+			if(can_st_msg!=0) // +27 byte
+			{
+				send_buffer[ind++] = can_id;
+				buffer_append_float16(send_buffer, can_st_msg_5->v_in, 1e1, &ind); // +2
+				buffer_append_float16(send_buffer, can_st_msg_4->temp_fet, 1e1, &ind); // +2
+				buffer_append_float16(send_buffer, can_st_msg_4->temp_motor, 1e1, &ind); // +2
+				buffer_append_float16(send_buffer, can_st_msg->current, 1e2, &ind); // +2
+				buffer_append_float16(send_buffer, can_st_msg_4->current_in, 1e2, &ind); // +2
+				buffer_append_float16(send_buffer, can_st_msg->duty, 1e3, &ind); // +2
+				buffer_append_float32(send_buffer, can_st_msg_3->watt_hours, 1e4, &ind); // +4	
+				buffer_append_float32(send_buffer, can_st_msg_3->watt_hours_charged, 1e4, &ind); // +4	
+				//buffer_append_float32(send_buffer, can_st_msg_5->tacho_value, 1, &ind); // +4
+				buffer_append_float32(send_buffer, can_st_msg->duty, 100.0, &ind); // +4 - currently this is accumulated position in radian (instead tacho_value)
+				buffer_append_float16(send_buffer, can_st_msg->rpm, 1e2, &ind); // +2 - currently this value is rps ()
+			}
 		}
+		commands_send_packet(send_buffer, ind);
 	}
-	commands_send_packet(send_buffer, ind);
 }
 
 // OpenRobot Thread
@@ -961,12 +966,6 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		chThdCreateStatic(dps_control_thread_wa, sizeof(dps_control_thread_wa), 
 					NORMALPRIO, dps_control_thread, NULL);
 
-		// Initialize packet handler
-		packet_init(send_packet_spi_slave, process_packet_spi_slave, PACKET_HANDLER);
-
-		// set custom app as openrobot app, To set the RX function.
-		commands_set_app_data_handler(send_openrobot_app_data);
-
 #ifndef USE_CUSTOM_ABI_ENCODER_AT_SPI
 		// SPI interface
 		spi1_peripheral_setting_slave();
@@ -975,9 +974,15 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		// SPI Start Slave Threads
 		chThdCreateStatic(spi_slave_read_thread_wa, sizeof(spi_slave_read_thread_wa), NORMALPRIO, spi_slave_read_thread, NULL);
 		commands_printf("\r\nVESCuino SPI RX Thread Start");
+
+		// Initialize packet handler
+		packet_init(send_packet_spi_slave, process_packet_spi_slave, PACKET_HANDLER);
 #else
 		commands_printf("\r\nUse CUSTOM ABI Encoder at SPI Port");
 #endif
+
+		// set custom app as openrobot app, To set the RX function.
+		commands_set_app_data_handler(send_openrobot_app_data);
 	}
 	
 
@@ -995,11 +1000,12 @@ static THD_FUNCTION(openrobot_thread, arg) {
 	// using the experiment plot
 	chThdSleepMilliseconds(8000);
 	commands_init_plot("Sample", "Data");
-	commands_plot_add_graph("rps [get_rpm]");
-	commands_plot_add_graph("rps [get_rpm_fast]");
-	commands_plot_add_graph("rps [get_rpm_faster]");
-	commands_plot_add_graph("rps [get_rps]");
-	commands_plot_add_graph("rad [pos accum]");
+	commands_plot_add_graph("vel ref [dps]");
+	commands_plot_add_graph("vel [dps]");
+	commands_plot_add_graph("pos ref [deg]");
+	commands_plot_add_graph("pos [deg]");
+	commands_plot_add_graph("duty [-1~1]");
+	commands_plot_add_graph("current [A]");
 	float samp = 0.0;
 
 	// get motor setting and app setting handler
@@ -1150,15 +1156,27 @@ static THD_FUNCTION(openrobot_thread, arg) {
 		if (is_exp_plot_running)
 		{	
 			commands_plot_set_graph(0);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
+			//commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number);
+			commands_send_plot_points(samp, dps_target);
+
 			commands_plot_set_graph(1);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS/polepair_number);
+			//commands_send_plot_points(samp, mcpwm_foc_get_rpm_fast()*RPM2RPS/polepair_number);
+			commands_send_plot_points(samp, mcpwm_foc_get_rpm()*RPM2RPS/polepair_number*RAD2DEG);	// smooth but delayed
+			//commands_send_plot_points(samp, mcpwm_foc_get_rps()*RAD2DEG);	// noisy but fast 
+
 			commands_plot_set_graph(2);
-			commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS/polepair_number);		
+			//commands_send_plot_points(samp, mcpwm_foc_get_rpm_faster()*RPM2RPS/polepair_number);
+			commands_send_plot_points(samp, deg_ref);		
+
 			commands_plot_set_graph(3);
-			commands_send_plot_points(samp, mcpwm_foc_get_rps());
+			commands_send_plot_points(samp, mcpwm_foc_get_pos_accum());
+			
 			commands_plot_set_graph(4);
-			commands_send_plot_points(samp, mcpwm_foc_get_pos_accum()*DEG2RAD);
+			commands_send_plot_points(samp, mc_interface_get_duty_cycle_now());
+
+			commands_plot_set_graph(5);
+			commands_send_plot_points(samp, mc_interface_get_tot_current_filtered());
+			
 			samp++;
 		}
 
@@ -1255,7 +1273,12 @@ void app_openrobot_set_dps_amax(float Amax, bool flash)
 void app_openrobot_set_servo(float g_t, int c_mode)
 {
 	servo_target = g_t;
-	control_mode = c_mode;
+	if(control_mode!=TRAJ_CONTROL) {
+		control_mode = c_mode;
+	}
+	else {
+		commands_printf("Trajectory Controller is running... <Trajectory control can only be cancelled by 'or_re'>\n");
+	}
 }
 
 void app_openrobot_set_servo_gain(float kp, float ki)
@@ -1621,7 +1644,7 @@ static THD_FUNCTION(dps_control_thread, arg) {
 		} break;
 
 		case TRAJ_CONTROL: {
-			deg_ref = app_openrobot_traj_controller();
+			s_prof = deg_ref = app_openrobot_traj_controller();
 			app_openrobot_control_enable();
 		} break;
 

@@ -44,3 +44,12 @@ GOTO제어를 SERVO제어라는 이름으로 바꾸었고 TRAJ 제어라는 걸 
 : TODO - Encoder Calculation Thread (과거), rpm_fast 와 비교해보기
 : TODO - VESCuino firmware 5.02 implimentation - arduino spi control
 : TODO - ROS에서 제어시 SERVO, TRAJ 제어이후 ROS 프로그램을 종료해도 Lock이 잡혀있게 된다. 이걸 풀도록 할지 유지할지 추후 결정 필요함. 이건 유지하는 걸로 결정 (Release를 통해 수동으로 해제하도록)
+
+2021-05-07
+: or_traj 이후에 or_dps 를 하면 점프를 한다. 완료
+
+2021-06-10
+: or_conf에서 build date, time을 볼 수 있게 하자. 완료
+
+2021-06-11
+: python으로 6dof 팔 움직이기.

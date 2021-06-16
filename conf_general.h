@@ -29,8 +29,8 @@
 #include "datatypes.h"
 
 //cdi
-//#define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
-#define HW60_IS_VESCUINO
+#define HW60_IS_VESCULAR    // HW60_IS_VESCULAR, HW60_IS_VESCUINO
+//#define HW60_IS_VESCUINO
 
 #ifdef HW60_IS_VESCULAR
 /////////////////////////// HW60_IS_VESCULAR /////////////////////////////////
@@ -44,6 +44,8 @@
 
 // motor setting custom precompilation
 #include "openrobot/mc_header_custom/kitech_motor_ifdef_id_14.h"
+
+//#define USE_CUSTOM_ABI_ENCODER_AT_SPI   // If it is enabled, Arduino SPI Communication impossible
 ////////////////////////////////////////////////////////////////////////////////
 #elif defined(HW60_IS_VESCUINO)
 #define HW_SOURCE "hw_60_openrobot_vescuino.c"
@@ -58,9 +60,7 @@
 //#include "openrobot/mc_header_custom/kitech_motor_ifdef_id_14.h"
 
 //#define USE_VESCUINO_UART2
-//#define USE_VESCUINO_ARDUINO_SPI
-#define USE_DEBUG_PRINTF
-#define USE_DEBUG_LED_TOGGLE
+#define USE_VESCUINO_ARDUINO_SPI
 #define USE_I2C_FAST_400KHZ_MODE
 
 // Custom ABI Encoder with HALL/ENC Hybrid commutation using HW SPI Port.
